@@ -164,6 +164,7 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
       tenant: {
         name: tenant?.name || 'Corporativo',
         subdomain: tenant?.subdomain || '',
+        emailDomain: tenant?.emailDomain || 'corporativo.com', 
         themeColor: tenant?.themeColor || '#2563eb'
       },
       usuario: { 

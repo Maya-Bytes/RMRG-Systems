@@ -5,7 +5,8 @@ import Image from "next/image";
 import { 
   LayoutDashboard, Users, Laptop, CircleDollarSign, 
   Ticket, LogOut, Bell, Menu, Settings, ChevronDown, 
-  X, Plus, Edit3, CheckCircle2, Clock, ShieldAlert, CheckCheck
+  X, Plus, Edit3, CheckCircle2, Clock, ShieldAlert, 
+  CheckCheck, UploadCloud, Sparkles
 } from "lucide-react";
 
 const ROLES_SISTEMA = [
@@ -18,6 +19,18 @@ const ROLES_SISTEMA = [
   "Contador",
   "Operativo"
 ];
+
+// Respaldo de dominios en caso de que el backend aún no envíe emailDomain
+const DOMINIOS_POR_SLUG = {
+  thecocacolacompany: "coca-cola.com",
+  cocacola: "coca-cola.com",
+  samsungelectronics: "samsung.com",
+  samsung: "samsung.com",
+  microsoftcorporation: "microsoft.com",
+  microsoft: "microsoft.com",
+  amazonwebservices: "amazon.com",
+  aws: "amazon.com"
+};
 
 export default function DashboardEmpresa() {
   const params = useParams();
@@ -32,7 +45,7 @@ export default function DashboardEmpresa() {
   const [moduloActivo, setModuloActivo] = useState("Resumen");
 
   // Identidad corporativa y datos principales
-  const [tenantInfo, setTenantInfo] = useState({ name: "Corporativo", themeColor: "#2563eb" });
+  const [tenantInfo, setTenantInfo] = useState({ name: "Corporativo", emailDomain: "", themeColor: "#2563eb" });
   const [perfil, setPerfil] = useState({ userId: "", numeroEmpleado: "", email: "", nombre: "Cargando...", apellido: "", puesto: "...", iniciales: "-", avatarUrl: null, rolSistema: "" });
   const [metricas, setMetricas] = useState({ empleados: 0, equipos: 0, tickets: 0 });
   
@@ -44,15 +57,19 @@ export default function DashboardEmpresa() {
   const [listaAuditoria, setListaAuditoria] = useState([]);
   const [filtroAreaTicket, setFiltroAreaTicket] = useState("TODOS");
 
-  // Estados de Modales
+  // Estados de Modal Empleado + Generador de Correo + Preview PNG
   const [showModalEmpleado, setShowModalEmpleado] = useState(false);
   const [modoEdicionEmpleado, setModoEdicionEmpleado] = useState(false);
   const [empleadoEditandoId, setEmpleadoEditandoId] = useState(null);
+  const [emailUsuarioEditadoManual, setEmailUsuarioEditadoManual] = useState(false);
+  const [emailPrefijo, setEmailPrefijo] = useState("");
   const [fotoFile, setFotoFile] = useState(null); 
+  const [fotoPreview, setFotoPreview] = useState(null);
   const [formEmpleado, setFormEmpleado] = useState({
-    nombres: '', apellidos: '', email: '', puesto: '', rol: '', salarioBase: '15000', tipoContrato: 'Indefinido', isActive: true
+    nombres: '', apellidos: '', email: '', puesto: '', rol: 'Operativo', salarioBase: '15000', tipoContrato: 'Indefinido', isActive: true
   });
 
+  // Otros Modales
   const [showModalEquipo, setShowModalEquipo] = useState(false);
   const [formEquipo, setFormEquipo] = useState({
     serialNumber: '', deviceType: 'Laptop', model: '', status: 'Disponible', assignedToId: ''
@@ -71,8 +88,32 @@ export default function DashboardEmpresa() {
   const [showModalPerfil, setShowModalPerfil] = useState(false);
   const [nuevaPassword, setNuevaPassword] = useState("");
   const [fotoPerfilFile, setFotoPerfilFile] = useState(null);
+  const [fotoPerfilPreview, setFotoPerfilPreview] = useState(null);
 
   const [guardando, setGuardando] = useState(false);
+
+  // Clases reutilizables de alto contraste para todos los inputs y selects
+  const inputStyle = "w-full text-sm px-3.5 py-2.5 bg-white text-slate-900 font-medium placeholder:text-slate-400 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-slate-800 transition-colors";
+  const labelStyle = "block text-xs font-bold text-slate-700 mb-1.5";
+
+  // Dominio oficial bloqueado para la empresa actual
+  const dominioCorporativo = tenantInfo.emailDomain || DOMINIOS_POR_SLUG[empresa] || `${empresa}.com`;
+
+  // Limpia acentos, ñ y espacios para sugerir el usuario del correo
+  const limpiarTextoCorreo = (texto) => {
+    return (texto || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+  };
+
+  const generarPrefijoSugerido = (nombres, apellidos) => {
+    const primerNombre = limpiarTextoCorreo(nombres.trim().split(/\s+/)[0]);
+    const primerApellido = limpiarTextoCorreo(apellidos.trim().split(/\s+/)[0]);
+    if (primerNombre && primerApellido) return `${primerNombre}.${primerApellido}`;
+    return primerNombre || primerApellido || "";
+  };
 
   const cargarTodo = async () => {
     const token = localStorage.getItem('rmrg_token');
@@ -162,6 +203,7 @@ export default function DashboardEmpresa() {
         alert("✅ Tu cuenta se actualizó correctamente.");
         setNuevaPassword("");
         setFotoPerfilFile(null);
+        setFotoPerfilPreview(null);
         setShowModalPerfil(false);
         cargarTodo();
       } else {
@@ -178,14 +220,20 @@ export default function DashboardEmpresa() {
   const abrirModalNuevoEmpleado = () => {
     setModoEdicionEmpleado(false);
     setEmpleadoEditandoId(null);
+    setEmailUsuarioEditadoManual(false);
+    setEmailPrefijo("");
     setFormEmpleado({ nombres: '', apellidos: '', email: '', puesto: '', rol: 'Operativo', salarioBase: '15000', tipoContrato: 'Indefinido', isActive: true });
     setFotoFile(null);
+    setFotoPreview(null);
     setShowModalEmpleado(true);
   };
 
   const abrirModalEditarEmpleado = (emp) => {
     setModoEdicionEmpleado(true);
     setEmpleadoEditandoId(emp.id);
+    const partesCorreo = (emp.email || "").split("@");
+    setEmailPrefijo(partesCorreo[0] || "");
+    setEmailUsuarioEditadoManual(true);
     setFormEmpleado({
       nombres: emp.firstName,
       apellidos: emp.lastName,
@@ -196,22 +244,44 @@ export default function DashboardEmpresa() {
       tipoContrato: emp.tipoContrato || 'Indefinido',
       isActive: emp.isActive
     });
+    setFotoFile(null);
+    setFotoPreview(null);
     setShowModalEmpleado(true);
   };
 
-  const handleImageChange = (e, setter) => {
+  const actualizarNombresOApellidos = (campo, valor) => {
+    const nuevoForm = { ...formEmpleado, [campo]: valor };
+    if (!modoEdicionEmpleado && !emailUsuarioEditadoManual) {
+      const sugerido = generarPrefijoSugerido(
+        campo === 'nombres' ? valor : nuevoForm.nombres,
+        campo === 'apellidos' ? valor : nuevoForm.apellidos
+      );
+      setEmailPrefijo(sugerido);
+    }
+    setFormEmpleado(nuevoForm);
+  };
+
+  const handleImageChange = (e, fileSetter, previewSetter) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.type !== "image/png") {
-        alert("Por favor, selecciona solo archivos .PNG");
+        alert("Por favor, selecciona únicamente archivos en formato .PNG");
         return;
       }
-      setter(file);
+      fileSetter(file);
+      previewSetter(URL.createObjectURL(file));
     }
   };
 
   const guardarEmpleado = async (e) => {
     e.preventDefault();
+    const prefijoLimpio = emailPrefijo.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    if (!prefijoLimpio) {
+      alert("Por favor ingresa un usuario válido para el correo corporativo.");
+      return;
+    }
+
+    const correoCompleto = `${prefijoLimpio}@${dominioCorporativo}`;
     setGuardando(true);
     const token = localStorage.getItem('rmrg_token');
 
@@ -221,11 +291,11 @@ export default function DashboardEmpresa() {
         res = await fetch(`${API_URL}/api/hr/empleados/${empleadoEditandoId}`, {
           method: 'PUT',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(formEmpleado)
+          body: JSON.stringify({ ...formEmpleado, email: correoCompleto })
         });
       } else {
         const paqueteDatos = new FormData();
-        Object.entries(formEmpleado).forEach(([k, v]) => paqueteDatos.append(k, v));
+        Object.entries({ ...formEmpleado, email: correoCompleto }).forEach(([k, v]) => paqueteDatos.append(k, v));
         if (fotoFile) paqueteDatos.append('foto', fotoFile);
 
         res = await fetch(`${API_URL}/api/dashboard/empleados`, {
@@ -353,14 +423,13 @@ export default function DashboardEmpresa() {
   ];
   const menusVisibles = menuOptions.filter(item => item.show);
 
-  // Datos filtrados para Operativo
   const misEquipos = listaEquipos.filter(eq => eq.assignedToId === perfil.userId);
   const misNominas = listaNominas.filter(nom => nom.user?.id === perfil.userId || nom.userId === perfil.userId);
   const misTicketsAbiertos = listaTickets.filter(t => t.status !== 'RESOLVED').length;
   const ticketsFiltrados = listaTickets.filter(t => filtroAreaTicket === "TODOS" ? true : t.targetArea === filtroAreaTicket);
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden font-sans relative">
+    <div className="flex h-screen bg-gray-50 text-slate-900 overflow-hidden font-sans relative">
       {/* BARRA SUPERIOR DE COLOR CORPORATIVO DINÁMICO */}
       <div className="fixed top-0 left-0 right-0 h-1 z-50" style={{ backgroundColor: colorMarca }} />
 
@@ -404,7 +473,7 @@ export default function DashboardEmpresa() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* CAMPANA DE NOTIFICACIONES INTERACTIVA */}
+            {/* CAMPANA DE NOTIFICACIONES */}
             <div className="relative">
               <button
                 onClick={() => { setShowNotifMenu(!showNotifMenu); setShowProfileMenu(false); }}
@@ -458,11 +527,16 @@ export default function DashboardEmpresa() {
 
             <div className="h-8 w-px bg-gray-300 mx-1"></div>
             
-            {/* MENÚ DE PERFIL Y CONFIGURACIÓN */}
+            {/* MENÚ DE PERFIL */}
             <div className="relative">
               <button onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifMenu(false); }} className="flex items-center gap-3 text-left hover:bg-gray-50 p-1.5 rounded-lg transition-colors">
                 {perfil.avatarUrl ? (
-                  <img src={`${API_URL}${perfil.avatarUrl}`} alt="Avatar" className="w-9 h-9 rounded-full object-cover border border-gray-200" />
+                  <img
+                    src={`${API_URL}${perfil.avatarUrl}`}
+                    alt="Avatar"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    className="w-9 h-9 rounded-full object-cover border border-gray-200"
+                  />
                 ) : (
                   <div style={{ backgroundColor: colorMarca }} className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm">
                     {perfil.iniciales}
@@ -497,7 +571,7 @@ export default function DashboardEmpresa() {
         </header>
 
         <main className="flex-1 p-6 overflow-y-auto relative">
-          {/* TARJETAS DE MÉTRICAS (Adaptadas según si es Operativo o Administrativo) */}
+          {/* TARJETAS DE MÉTRICAS */}
           {perfil.rolSistema === 'Operativo' ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
@@ -553,7 +627,6 @@ export default function DashboardEmpresa() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Mis Equipos Asignados */}
                   <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
                     <h4 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2"><Laptop size={18} /> Mi Equipo de Cómputo</h4>
                     {misEquipos.length === 0 ? (
@@ -573,7 +646,6 @@ export default function DashboardEmpresa() {
                     )}
                   </div>
 
-                  {/* Mis Recibos de Nómina */}
                   <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
                     <h4 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2"><CircleDollarSign size={18} /> Mis Recibos de Nómina</h4>
                     {misNominas.length === 0 ? (
@@ -630,9 +702,14 @@ export default function DashboardEmpresa() {
                           <td className="px-6 py-4">
                             <div className="flex items-center space-x-3">
                               {empleado.avatarUrl ? (
-                                <img src={`${API_URL}${empleado.avatarUrl}`} alt={empleado.nombreCompleto} className="h-9 w-9 rounded-full object-cover border border-gray-200" />
+                                <img
+                                  src={`${API_URL}${empleado.avatarUrl}`}
+                                  alt={empleado.nombreCompleto}
+                                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                  className="h-9 w-9 rounded-full object-cover border border-gray-200"
+                                />
                               ) : (
-                                <div className="h-9 w-9 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center font-bold text-xs">{empleado.iniciales}</div>
+                                <div className="h-9 w-9 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs">{empleado.iniciales}</div>
                               )}
                               <div>
                                 <p className="text-sm font-bold text-gray-900">{empleado.numeroEmpleado} - {empleado.nombreCompleto}</p>
@@ -640,10 +717,10 @@ export default function DashboardEmpresa() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-600">{empleado.rol}</td>
+                          <td className="px-6 py-4 text-sm text-gray-700 font-medium">{empleado.rol}</td>
                           <td className="px-6 py-4">
                             <p className="text-sm font-medium text-gray-800">{empleado.puesto}</p>
-                            <p className="text-xs text-gray-400">{empleado.tipoContrato}</p>
+                            <p className="text-xs text-gray-500">{empleado.tipoContrato}</p>
                           </td>
                           <td className="px-6 py-4 text-sm font-semibold text-gray-800">
                             ${Number(empleado.salarioBase).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
@@ -655,7 +732,7 @@ export default function DashboardEmpresa() {
                           </td>
                           <td className="px-6 py-4 text-right text-sm font-medium">
                             {["Super Administrador", "Admin de Recursos Humanos", "Analista HR"].includes(perfil.rolSistema) && (
-                              <button onClick={() => abrirModalEditarEmpleado(empleado)} className="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1">
+                              <button onClick={() => abrirModalEditarEmpleado(empleado)} className="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1 font-semibold">
                                 <Edit3 size={15} /> Editar
                               </button>
                             )}
@@ -709,7 +786,7 @@ export default function DashboardEmpresa() {
                           <select
                             value={eq.assignedToId || ""}
                             onChange={(e) => actualizarEquipo(eq.id, e.target.value ? "Asignado" : "Disponible", e.target.value || null)}
-                            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-gray-700"
+                            className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-900 font-medium"
                           >
                             <option value="">-- Sin asignar (En almacén) --</option>
                             {listaEmpleados.map(emp => (
@@ -727,9 +804,9 @@ export default function DashboardEmpresa() {
                               'bg-amber-50 text-amber-700 border-amber-200'
                             }`}
                           >
-                            <option value="Disponible">Disponible</option>
-                            <option value="Asignado">Asignado</option>
-                            <option value="En Reparación">En Reparación</option>
+                            <option value="Disponible" className="text-slate-900 bg-white">Disponible</option>
+                            <option value="Asignado" className="text-slate-900 bg-white">Asignado</option>
+                            <option value="En Reparación" className="text-slate-900 bg-white">En Reparación</option>
                           </select>
                         </td>
                       </tr>
@@ -806,7 +883,7 @@ export default function DashboardEmpresa() {
                     <select
                       value={filtroAreaTicket}
                       onChange={(e) => setFiltroAreaTicket(e.target.value)}
-                      className="text-xs border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 font-medium"
+                      className="text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-900 font-semibold"
                     >
                       <option value="TODOS">Todas las Áreas</option>
                       <option value="IT">Área: TI</option>
@@ -942,26 +1019,49 @@ export default function DashboardEmpresa() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-              <h3 className="text-lg font-bold text-gray-800">Configuración de Mi Cuenta</h3>
+              <h3 className="text-lg font-bold text-slate-900">Configuración de Mi Cuenta</h3>
               <button onClick={() => setShowModalPerfil(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <form onSubmit={guardarMiPerfil} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Actualizar Foto de Perfil (.PNG)</label>
-                <input type="file" accept="image/png" onChange={(e) => handleImageChange(e, setFotoPerfilFile)} className="w-full text-xs text-gray-600" />
+                <label className={labelStyle}>Foto de Perfil (.PNG)</label>
+                <div className="relative group w-full h-36 rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-600 bg-slate-50/70 hover:bg-slate-100/60 transition-all flex flex-col items-center justify-center overflow-hidden cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/png"
+                    onChange={(e) => handleImageChange(e, setFotoPerfilFile, setFotoPerfilPreview)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  {fotoPerfilPreview ? (
+                    <div className="relative w-full h-full flex items-center justify-center bg-slate-900/5 p-2">
+                      <img src={fotoPerfilPreview} alt="Vista previa" className="h-28 w-28 rounded-full object-cover border-2 border-white shadow-md" />
+                      <span className="absolute bottom-2 right-3 bg-slate-900/80 text-white text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                        Clic para cambiar .PNG
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-center p-4 flex flex-col items-center">
+                      <div className="bg-white p-2.5 rounded-full shadow-sm mb-2 border border-slate-200" style={{ color: colorMarca }}>
+                        <UploadCloud size={22} />
+                      </div>
+                      <p className="text-xs font-bold text-slate-700">Haz clic o arrastra una imagen <span className="underline" style={{ color: colorMarca }}>.PNG</span></p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Tamaño recomendado: cuadrado (ej. 400x400 px)</p>
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Nueva Contraseña (Opcional)</label>
+                <label className={labelStyle}>Nueva Contraseña (Opcional)</label>
                 <input
                   type="password"
                   placeholder="Dejar en blanco para mantener la actual"
                   value={nuevaPassword}
                   onChange={e => setNuevaPassword(e.target.value)}
-                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg"
+                  className={inputStyle}
                 />
               </div>
               <div className="pt-3 flex justify-end gap-2">
-                <button type="button" onClick={() => setShowModalPerfil(false)} className="px-4 py-2 text-sm text-gray-600">Cancelar</button>
+                <button type="button" onClick={() => setShowModalPerfil(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
                 <button type="submit" disabled={guardando} style={{ backgroundColor: colorMarca }} className="px-4 py-2 text-sm font-semibold text-white rounded-lg">
                   {guardando ? 'Guardando...' : 'Actualizar Cuenta'}
                 </button>
@@ -976,73 +1076,194 @@ export default function DashboardEmpresa() {
          ========================================== */}
       {showModalEmpleado && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-              <h3 className="text-lg font-bold text-gray-800">{modoEdicionEmpleado ? 'Editar Expediente de Empleado' : 'Alta de Nuevo Empleado'}</h3>
-              <button onClick={() => setShowModalEmpleado(false)} className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg"><X size={20} /></button>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="text-lg font-bold text-slate-900">{modoEdicionEmpleado ? 'Editar Expediente de Empleado' : 'Alta de Nuevo Empleado'}</h3>
+              <button onClick={() => setShowModalEmpleado(false)} className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg"><X size={20} /></button>
             </div>
 
-            <form onSubmit={guardarEmpleado} className="p-6 overflow-y-auto space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={guardarEmpleado} className="p-6 overflow-y-auto space-y-5">
+              {/* NOMBRES Y APELLIDOS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Nombres</label>
-                  <input required type="text" value={formEmpleado.nombres} onChange={e => setFormEmpleado({...formEmpleado, nombres: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                  <label className={labelStyle}>Nombres</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ej. Carlos Alberto"
+                    value={formEmpleado.nombres}
+                    onChange={e => actualizarNombresOApellidos('nombres', e.target.value)}
+                    className={inputStyle}
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Apellidos</label>
-                  <input required type="text" value={formEmpleado.apellidos} onChange={e => setFormEmpleado({...formEmpleado, apellidos: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                  <label className={labelStyle}>Apellidos</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ej. Maya López"
+                    value={formEmpleado.apellidos}
+                    onChange={e => actualizarNombresOApellidos('apellidos', e.target.value)}
+                    className={inputStyle}
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* CORREO CORPORATIVO CON @DOMINIO BLOQUEADO Y ROL */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Correo Corporativo</label>
-                  <input required disabled={modoEdicionEmpleado} type="email" value={formEmpleado.email} onChange={e => setFormEmpleado({...formEmpleado, email: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg disabled:bg-gray-100" />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700">Correo Corporativo</label>
+                    {!modoEdicionEmpleado && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailUsuarioEditadoManual(false);
+                          setEmailPrefijo(generarPrefijoSugerido(formEmpleado.nombres, formEmpleado.apellidos));
+                        }}
+                        className="text-[11px] font-semibold text-blue-600 hover:underline flex items-center gap-1"
+                        title="Autogenerar con nombre y apellido"
+                      >
+                        <Sparkles size={12} /> Autogenerar
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-stretch rounded-lg border border-slate-300 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-slate-800 bg-white">
+                    <input
+                      required
+                      disabled={modoEdicionEmpleado}
+                      type="text"
+                      placeholder="nombre.apellido"
+                      value={emailPrefijo}
+                      onChange={e => {
+                        setEmailUsuarioEditadoManual(true);
+                        setEmailPrefijo(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''));
+                      }}
+                      className="w-full text-sm px-3 py-2.5 bg-white text-slate-900 font-semibold placeholder:text-slate-400 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                    />
+                    <span className="inline-flex items-center px-3 bg-slate-100 text-slate-700 text-xs font-bold border-l border-slate-300 select-none shrink-0">
+                      @{dominioCorporativo}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Se genera al capturar el nombre o puedes personalizar el usuario antes del <span className="font-semibold text-slate-700">@{dominioCorporativo}</span>.
+                  </p>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Rol en el Sistema (8 Roles)</label>
-                  <select required value={formEmpleado.rol} onChange={e => setFormEmpleado({...formEmpleado, rol: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white">
-                    {ROLES_SISTEMA.map(r => <option key={r} value={r}>{r}</option>)}
+                  <label className={labelStyle}>Rol en el Sistema (8 Roles)</label>
+                  <select
+                    required
+                    value={formEmpleado.rol}
+                    onChange={e => setFormEmpleado({...formEmpleado, rol: e.target.value})}
+                    className={inputStyle}
+                  >
+                    {ROLES_SISTEMA.map(r => <option key={r} value={r} className="text-slate-900 bg-white">{r}</option>)}
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              {/* PUESTO, SALARIO Y CONTRATO */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Puesto Interno</label>
-                  <input required type="text" value={formEmpleado.puesto} onChange={e => setFormEmpleado({...formEmpleado, puesto: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                  <label className={labelStyle}>Puesto Interno</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ej. Gerente de Planta"
+                    value={formEmpleado.puesto}
+                    onChange={e => setFormEmpleado({...formEmpleado, puesto: e.target.value})}
+                    className={inputStyle}
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Salario Base Mensual ($)</label>
-                  <input required type="number" step="0.01" value={formEmpleado.salarioBase} onChange={e => setFormEmpleado({...formEmpleado, salarioBase: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                  <label className={labelStyle}>Salario Base Mensual ($)</label>
+                  <input
+                    required
+                    type="number"
+                    step="0.01"
+                    value={formEmpleado.salarioBase}
+                    onChange={e => setFormEmpleado({...formEmpleado, salarioBase: e.target.value})}
+                    className={inputStyle}
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Tipo de Contrato</label>
-                  <select value={formEmpleado.tipoContrato} onChange={e => setFormEmpleado({...formEmpleado, tipoContrato: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white">
-                    <option value="Indefinido">Indefinido</option>
-                    <option value="Temporal">Temporal</option>
-                    <option value="Honorarios">Honorarios</option>
+                  <label className={labelStyle}>Tipo de Contrato</label>
+                  <select
+                    value={formEmpleado.tipoContrato}
+                    onChange={e => setFormEmpleado({...formEmpleado, tipoContrato: e.target.value})}
+                    className={inputStyle}
+                  >
+                    <option value="Indefinido" className="text-slate-900 bg-white">Indefinido</option>
+                    <option value="Temporal" className="text-slate-900 bg-white">Temporal</option>
+                    <option value="Honorarios" className="text-slate-900 bg-white">Honorarios</option>
                   </select>
                 </div>
               </div>
 
+              {/* RECUADRO VISUAL DE SUBIDA .PNG O BAJA LÓGICA */}
               {modoEdicionEmpleado ? (
-                <div className="pt-2">
-                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700 cursor-pointer">
-                    <input type="checkbox" checked={formEmpleado.isActive} onChange={e => setFormEmpleado({...formEmpleado, isActive: e.target.checked})} className="rounded text-blue-600" />
-                    Empleado Activo en la Empresa (Desmarcar para Baja Lógica)
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <label className="inline-flex items-center gap-2.5 text-sm font-bold text-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formEmpleado.isActive}
+                      onChange={e => setFormEmpleado({...formEmpleado, isActive: e.target.checked})}
+                      className="w-4 h-4 rounded text-blue-600"
+                    />
+                    Empleado Activo en la Empresa (Desmarcar para aplicar Baja Lógica)
                   </label>
                 </div>
               ) : (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Foto de Perfil (.PNG opcional)</label>
-                  <input type="file" accept="image/png" onChange={(e) => handleImageChange(e, setFotoFile)} className="text-xs text-gray-500" />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700">Fotografía del Empleado (Formato .PNG opcional)</label>
+                    {fotoPreview && (
+                      <button
+                        type="button"
+                        onClick={() => { setFotoFile(null); setFotoPreview(null); }}
+                        className="text-xs font-semibold text-red-600 hover:underline"
+                      >
+                        Quitar imagen
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative group w-full h-36 rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-700 bg-slate-50/70 hover:bg-slate-100/70 transition-all flex flex-col items-center justify-center overflow-hidden cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/png"
+                      onChange={(e) => handleImageChange(e, setFotoFile, setFotoPreview)}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    {fotoPreview ? (
+                      <div className="flex items-center gap-4 px-6">
+                        <img src={fotoPreview} alt="Preview" className="w-24 h-24 rounded-full object-cover border-2 border-white shadow-md" />
+                        <div className="text-left">
+                          <p className="text-xs font-bold text-emerald-700">✓ Imagen .PNG lista para subir</p>
+                          <p className="text-xs text-slate-600 truncate max-w-[220px]">{fotoFile?.name}</p>
+                          <p className="text-[11px] text-slate-400 mt-1">Haz clic sobre el recuadro si deseas cambiarla</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center p-4 flex flex-col items-center">
+                        <div className="bg-white p-3 rounded-full shadow-sm mb-2 border border-slate-200 group-hover:scale-105 transition-transform" style={{ color: colorMarca }}>
+                          <UploadCloud size={24} />
+                        </div>
+                        <p className="text-xs font-bold text-slate-700">
+                          Haz clic aquí o arrastra la foto en formato <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-900 font-mono">.PNG</span>
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-1">Si no subes una foto, se asignará un avatar con sus iniciales</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
-              <div className="pt-4 border-t border-gray-100 flex justify-end gap-3">
-                <button type="button" onClick={() => setShowModalEmpleado(false)} className="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-                <button type="submit" disabled={guardando} style={{ backgroundColor: colorMarca }} className="px-4 py-2 text-sm font-semibold text-white rounded-lg">
+              <div className="pt-4 border-t border-gray-200 flex justify-end gap-3">
+                <button type="button" onClick={() => setShowModalEmpleado(false)} className="px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={guardando} style={{ backgroundColor: colorMarca }} className="px-5 py-2.5 text-sm font-semibold text-white rounded-lg shadow-sm hover:opacity-95">
                   {guardando ? 'Guardando...' : 'Guardar Cambios'}
                 </button>
               </div>
@@ -1057,19 +1278,19 @@ export default function DashboardEmpresa() {
       {showModalEquipo && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-800">Registrar Nuevo Equipo TI</h3>
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="text-lg font-bold text-slate-900">Registrar Nuevo Equipo TI</h3>
               <button onClick={() => setShowModalEquipo(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <form onSubmit={guardarEquipo} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Número de Serie</label>
-                <input required type="text" placeholder="Ej. LT-COCA-09" value={formEquipo.serialNumber} onChange={e => setFormEquipo({...formEquipo, serialNumber: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                <label className={labelStyle}>Número de Serie</label>
+                <input required type="text" placeholder="Ej. LT-COCA-09" value={formEquipo.serialNumber} onChange={e => setFormEquipo({...formEquipo, serialNumber: e.target.value})} className={inputStyle} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Tipo de Dispositivo</label>
-                  <select value={formEquipo.deviceType} onChange={e => setFormEquipo({...formEquipo, deviceType: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white">
+                  <label className={labelStyle}>Tipo de Dispositivo</label>
+                  <select value={formEquipo.deviceType} onChange={e => setFormEquipo({...formEquipo, deviceType: e.target.value})} className={inputStyle}>
                     <option value="Laptop">Laptop</option>
                     <option value="Monitor">Monitor</option>
                     <option value="Smartphone">Smartphone</option>
@@ -1077,19 +1298,19 @@ export default function DashboardEmpresa() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Marca / Modelo</label>
-                  <input required type="text" placeholder="Ej. Dell Latitude 5420" value={formEquipo.model} onChange={e => setFormEquipo({...formEquipo, model: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                  <label className={labelStyle}>Marca / Modelo</label>
+                  <input required type="text" placeholder="Ej. Dell Latitude 5420" value={formEquipo.model} onChange={e => setFormEquipo({...formEquipo, model: e.target.value})} className={inputStyle} />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Asignar a Empleado (Opcional)</label>
-                <select value={formEquipo.assignedToId} onChange={e => setFormEquipo({...formEquipo, assignedToId: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white">
+                <label className={labelStyle}>Asignar a Empleado (Opcional)</label>
+                <select value={formEquipo.assignedToId} onChange={e => setFormEquipo({...formEquipo, assignedToId: e.target.value})} className={inputStyle}>
                   <option value="">-- Dejar Disponible en Almacén --</option>
                   {listaEmpleados.map(emp => <option key={emp.id} value={emp.id}>{emp.numeroEmpleado} - {emp.nombreCompleto}</option>)}
                 </select>
               </div>
               <div className="pt-3 flex justify-end gap-2">
-                <button type="button" onClick={() => setShowModalEquipo(false)} className="px-4 py-2 text-sm text-gray-600">Cancelar</button>
+                <button type="button" onClick={() => setShowModalEquipo(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
                 <button type="submit" disabled={guardando} style={{ backgroundColor: colorMarca }} className="px-4 py-2 text-sm font-semibold text-white rounded-lg">Guardar Equipo</button>
               </div>
             </form>
@@ -1103,14 +1324,14 @@ export default function DashboardEmpresa() {
       {showModalNomina && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-800">Dispersar Pago de Nómina</h3>
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="text-lg font-bold text-slate-900">Dispersar Pago de Nómina</h3>
               <button onClick={() => setShowModalNomina(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <form onSubmit={guardarNomina} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Seleccionar Empleado</label>
-                <select required value={formNomina.userId} onChange={e => seleccionarEmpleadoNomina(e.target.value)} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white">
+                <label className={labelStyle}>Seleccionar Empleado</label>
+                <select required value={formNomina.userId} onChange={e => seleccionarEmpleadoNomina(e.target.value)} className={inputStyle}>
                   <option value="">Selecciona un trabajador...</option>
                   {listaEmpleados.map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.numeroEmpleado} - {emp.nombreCompleto} (${emp.salarioBase})</option>
@@ -1118,11 +1339,11 @@ export default function DashboardEmpresa() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Monto Neto a Depositar ($)</label>
-                <input required type="number" step="0.01" value={formNomina.amountNet} onChange={e => setFormNomina({...formNomina, amountNet: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                <label className={labelStyle}>Monto Neto a Depositar ($)</label>
+                <input required type="number" step="0.01" value={formNomina.amountNet} onChange={e => setFormNomina({...formNomina, amountNet: e.target.value})} className={inputStyle} />
               </div>
               <div className="pt-3 flex justify-end gap-2">
-                <button type="button" onClick={() => setShowModalNomina(false)} className="px-4 py-2 text-sm text-gray-600">Cancelar</button>
+                <button type="button" onClick={() => setShowModalNomina(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
                 <button type="submit" disabled={guardando} className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg">Emitir Pago</button>
               </div>
             </form>
@@ -1136,14 +1357,14 @@ export default function DashboardEmpresa() {
       {showModalTicket && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-800">Levantar Ticket de Soporte</h3>
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="text-lg font-bold text-slate-900">Levantar Ticket de Soporte</h3>
               <button onClick={() => setShowModalTicket(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <form onSubmit={guardarTicket} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Área Destino</label>
-                <select value={formTicket.targetArea} onChange={e => setFormTicket({...formTicket, targetArea: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white">
+                <label className={labelStyle}>Área Destino</label>
+                <select value={formTicket.targetArea} onChange={e => setFormTicket({...formTicket, targetArea: e.target.value})} className={inputStyle}>
                   <option value="IT">Sistemas / Soporte TI</option>
                   <option value="HR">Recursos Humanos</option>
                   <option value="FINANCE">Finanzas y Nómina</option>
@@ -1151,15 +1372,15 @@ export default function DashboardEmpresa() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Asunto / Título</label>
-                <input required type="text" placeholder="Ej. Solicitud de constancia laboral" value={formTicket.title} onChange={e => setFormTicket({...formTicket, title: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                <label className={labelStyle}>Asunto / Título</label>
+                <input required type="text" placeholder="Ej. Solicitud de constancia laboral" value={formTicket.title} onChange={e => setFormTicket({...formTicket, title: e.target.value})} className={inputStyle} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Descripción detallada</label>
-                <textarea required rows={3} placeholder="Describe el problema o requerimiento..." value={formTicket.description} onChange={e => setFormTicket({...formTicket, description: e.target.value})} className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg" />
+                <label className={labelStyle}>Descripción detallada</label>
+                <textarea required rows={3} placeholder="Describe el problema o requerimiento..." value={formTicket.description} onChange={e => setFormTicket({...formTicket, description: e.target.value})} className={inputStyle} />
               </div>
               <div className="pt-3 flex justify-end gap-2">
-                <button type="button" onClick={() => setShowModalTicket(false)} className="px-4 py-2 text-sm text-gray-600">Cancelar</button>
+                <button type="button" onClick={() => setShowModalTicket(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
                 <button type="submit" disabled={guardando} style={{ backgroundColor: colorMarca }} className="px-4 py-2 text-sm font-semibold text-white rounded-lg">Enviar Ticket</button>
               </div>
             </form>
