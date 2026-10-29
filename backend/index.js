@@ -94,6 +94,10 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) return res.status(401).json({ error: "Credenciales incorrectas." });
     if (!user.isActive) return res.status(403).json({ error: "Esta cuenta ha sido desactivada por Recursos Humanos." });
 
+    if (user.tenant && user.tenant.isActive === false) {
+      return res.status(403).json({ error: "El servicio para este corporativo se encuentra suspendido temporalmente." });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ error: "Credenciales incorrectas." });
 
@@ -568,6 +572,220 @@ app.put('/api/perfil', verificarToken, upload.single('foto'), async (req, res) =
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al actualizar tu perfil" });
+  }
+});
+
+// ==========================================
+// 8. MODO DIOS (Autenticación Maestra y Gobierno Multi-Tenant)
+// ==========================================
+const verificarMasterToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: "Acceso denegado. Se requiere Token Maestro." });
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err || !decoded.isGodMode) {
+      return res.status(403).json({ error: "Privilegios insuficientes. Exclusivo para Modo Dios." });
+    }
+    req.master = decoded;
+    next();
+  });
+};
+
+// 8.1 Login Maestro con Doble Factor (.PEM / Master Key)
+app.post('/api/auth/master-login', async (req, res) => {
+  const { email, password, masterKey } = req.body;
+
+  if (!email || !password || !masterKey) {
+    return res.status(400).json({ error: "Correo, contraseña y Llave Maestra (.pem) son obligatorios." });
+  }
+
+  try {
+    const admin = await prisma.system_Admin.findUnique({ where: { email: email.trim().toLowerCase() } });
+    if (!admin) return res.status(401).json({ error: "Credenciales maestras inválidas." });
+
+    const passValida = await bcrypt.compare(password, admin.password);
+    if (!passValida) return res.status(401).json({ error: "Contraseña maestra incorrecta." });
+
+    // Limpia encabezados en caso de que suba un archivo .pem completo con BEGIN/END
+    const llaveLimpia = masterKey
+      .replace(/-----BEGIN.*?-----/g, '')
+      .replace(/-----END.*?-----/g, '')
+      .trim();
+
+    const keyValida = await bcrypt.compare(llaveLimpia, admin.masterKeyHash);
+    if (!keyValida) return res.status(403).json({ error: "Firma criptográfica (.pem) rechazada." });
+
+    const token = jwt.sign(
+      { masterId: admin.id, email: admin.email, name: admin.name, isGodMode: true },
+      process.env.JWT_SECRET,
+      { expiresIn: '4h' }
+    );
+
+    return res.status(200).json({
+      message: "Acceso Modo Dios concedido",
+      token,
+      admin: { name: admin.name, email: admin.email }
+    });
+  } catch (error) {
+    console.error("Error en master-login:", error);
+    return res.status(500).json({ error: "Error interno en autenticación maestra." });
+  }
+});
+
+// 8.2 Resumen Global de toda la Nube Multi-Tenant
+app.get('/api/master/overview', verificarMasterToken, async (req, res) => {
+  try {
+    const [tenants, totalUsuarios, totalEquipos, totalTickets, globalLogs] = await Promise.all([
+      prisma.tenant.findMany({
+        include: {
+          _count: { select: { users: true } },
+          users: {
+            where: { role: { name: 'Super Administrador' } },
+            select: { numeroEmpleado: true, email: true },
+            take: 1
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.user.count(),
+      prisma.iT_Asset.count(),
+      prisma.ticket.count({ where: { status: { in: ['PENDING', 'IN_PROGRESS'] } } }),
+      prisma.audit_Log.findMany({
+        include: {
+          user: { select: { firstName: true, lastName: true, numeroEmpleado: true, tenant: { select: { name: true, themeColor: true } } } }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 30
+      })
+    ]);
+
+    const tenantsConMetricas = await Promise.all(
+      tenants.map(async (t) => {
+        const [ticketsCount, assetsCount] = await Promise.all([
+          prisma.ticket.count({ where: { tenantId: t.id } }),
+          prisma.iT_Asset.count({ where: { tenantId: t.id } })
+        ]);
+        return {
+          id: t.id,
+          name: t.name,
+          subdomain: t.subdomain,
+          emailDomain: t.emailDomain,
+          themeColor: t.themeColor || '#2563eb',
+          isActive: t.isActive,
+          createdAt: t.createdAt,
+          usuariosCount: t._count.users,
+          ticketsCount,
+          assetsCount,
+          superAdmin: t.users[0] || null
+        };
+      })
+    );
+
+    res.json({
+      admin: req.master,
+      metricasGlobales: {
+        empresas: tenants.length,
+        empresasActivas: tenants.filter(t => t.isActive).length,
+        usuariosTotales: totalUsuarios,
+        equiposTotales: totalEquipos,
+        ticketsActivos: totalTickets
+      },
+      tenants: tenantsConMetricas,
+      auditoriaGlobal: globalLogs
+    });
+  } catch (error) {
+    console.error("Error en /api/master/overview:", error);
+    res.status(500).json({ error: "Error al cargar métricas globales." });
+  }
+});
+
+// 8.3 Crear un Nuevo Corporativo (Tenant) + su Super Administrador Inicial
+app.post('/api/master/tenants', verificarMasterToken, async (req, res) => {
+  const { name, subdomain, emailDomain, themeColor } = req.body;
+
+  if (!name || !subdomain || !emailDomain) {
+    return res.status(400).json({ error: "Nombre, subdominio y dominio de correo son obligatorios." });
+  }
+
+  try {
+    const cleanSubdomain = subdomain.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const cleanDomain = emailDomain.toLowerCase().replace(/^@/, '').trim();
+
+    let superRole = await prisma.role.findFirst({ where: { name: 'Super Administrador' } });
+    if (!superRole) {
+      superRole = await prisma.role.create({ data: { name: 'Super Administrador', permissions: { all: true } } });
+    }
+
+    const defaultPassword = await bcrypt.hash('Admin123!', 10);
+
+    // Generar un ID de 6 dígitos consecutivo al más alto actual
+    const ultimoUsuario = await prisma.user.findFirst({ orderBy: { numeroEmpleado: 'desc' } });
+    const nuevoNumeroEmpleado = ultimoUsuario
+      ? String(parseInt(ultimoUsuario.numeroEmpleado, 10) + 1)
+      : '100001';
+
+    const nuevoTenant = await prisma.tenant.create({
+      data: {
+        name: name.trim(),
+        subdomain: cleanSubdomain,
+        emailDomain: cleanDomain,
+        themeColor: themeColor || '#2563eb',
+        isActive: true
+      }
+    });
+
+    const superAdmin = await prisma.user.create({
+      data: {
+        numeroEmpleado: nuevoNumeroEmpleado,
+        email: `superadmin@${cleanDomain}`,
+        password: defaultPassword,
+        firstName: 'Director',
+        lastName: name.trim().split(' ')[0],
+        tenantId: nuevoTenant.id,
+        roleId: superRole.id,
+        hrProfile: {
+          create: {
+            position: 'Director General',
+            hireDate: new Date(),
+            baseSalary: 45000.00,
+            contractType: 'Indefinido',
+            tenantId: nuevoTenant.id
+          }
+        }
+      }
+    });
+
+    res.status(201).json({
+      message: "Corporativo desplegado con éxito",
+      tenant: nuevoTenant,
+      credencialesIniciales: {
+        numeroEmpleado: superAdmin.numeroEmpleado,
+        email: superAdmin.email,
+        passwordTemporal: 'Admin123!'
+      }
+    });
+  } catch (error) {
+    console.error("Error al crear corporativo:", error);
+    res.status(500).json({ error: "No se pudo crear la empresa (verifica que el subdominio o dominio no existan ya)." });
+  }
+});
+
+// 8.4 Suspender o Reactivar una Empresa Completa
+app.put('/api/master/tenants/:id/toggle', verificarMasterToken, async (req, res) => {
+  try {
+    const tenantActual = await prisma.tenant.findUnique({ where: { id: req.params.id } });
+    if (!tenantActual) return res.status(404).json({ error: "Empresa no encontrada" });
+
+    const actualizado = await prisma.tenant.update({
+      where: { id: req.params.id },
+      data: { isActive: !tenantActual.isActive }
+    });
+
+    res.json({ message: "Estado actualizado", tenant: actualizado });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al cambiar el estado de la empresa" });
   }
 });
 
