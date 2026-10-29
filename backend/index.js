@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt'); // Usando bcrypt (el mismo del seed)
+const bcrypt = require('bcrypt');
 const multer = require('multer');
 
 const app = express();
@@ -25,7 +25,6 @@ const storage = multer.diskStorage({
     cb(null, avatarsDir);
   },
   filename: function (req, file, cb) {
-    // Genera: avatar-16987456123-random.png
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, 'avatar-' + uniqueSuffix + '.png');
   }
@@ -54,21 +53,18 @@ const verificarToken = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: "Token inválido o expirado." });
-    req.user = user; // Inyecta los datos del token (userId, tenantId, etc.) en la petición
+    req.user = user;
     next();
   });
 };
 
 // ==========================================
-// RUTAS DE LA API
+// 0. HEALTH CHECK Y LOGIN
 // ==========================================
-
-// 0. HEALTH CHECK (Para Render)
 app.get('/', (req, res) => {
-  res.json({ estado: 'Online', mensaje: 'API Cloud-Native de RMG Systems operativa ☁️' });
+  res.json({ estado: 'Online', mensaje: 'API Cloud-Native de RMRG Systems operativa ☁️' });
 });
 
-// 1. LOGIN UNIFICADO (Correo o ID de 6 dígitos)
 app.post('/api/auth/login', async (req, res) => {
   const { usuario, password } = req.body;
   
@@ -85,11 +81,11 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     if (!user) return res.status(401).json({ error: "Credenciales incorrectas." });
+    if (!user.isActive) return res.status(403).json({ error: "Esta cuenta ha sido desactivada por Recursos Humanos." });
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ error: "Credenciales incorrectas." });
 
-    // Payload del JWT con los datos reestructurados
     const payload = {
       userId: user.id, 
       tenantId: user.tenantId, 
@@ -109,35 +105,42 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// 2. DASHBOARD (RESUMEN) - Extrae el tenantId directo del Token
+// ==========================================
+// 1. RESUMEN Y MÓDULO DE RECURSOS HUMANOS
+// ==========================================
 app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
   try {
-    // Usamos req.user.tenantId en lugar de buscar por URL
-    const totalEmpleados = await prisma.user.count({ where: { tenantId: req.user.tenantId } });
+    const totalEmpleados = await prisma.user.count({ where: { tenantId: req.user.tenantId, isActive: true } });
     const totalEquipos = await prisma.iT_Asset.count({ where: { tenantId: req.user.tenantId, status: 'Asignado' } });
     const ticketsAbiertos = await prisma.ticket.count({ where: { tenantId: req.user.tenantId, status: { in: ['PENDING', 'IN_PROGRESS'] } } });
 
     const listaEmpleados = await prisma.user.findMany({
       where: { tenantId: req.user.tenantId }, 
       include: { hrProfile: true, role: true }, 
-      take: 10, 
       orderBy: { createdAt: 'desc' }
     });
 
     const empleadosFormateados = listaEmpleados.map(emp => ({
       id: emp.id,
       numeroEmpleado: emp.numeroEmpleado,
+      firstName: emp.firstName,
+      lastName: emp.lastName,
       nombreCompleto: `${emp.firstName} ${emp.lastName}`,
       email: emp.email, 
       puesto: emp.hrProfile ? emp.hrProfile.position : 'N/A',
+      salarioBase: emp.hrProfile ? Number(emp.hrProfile.baseSalary) : 0,
+      tipoContrato: emp.hrProfile ? emp.hrProfile.contractType : 'Indefinido',
+      fechaIngreso: emp.hrProfile ? emp.hrProfile.hireDate : emp.createdAt,
       rol: emp.role.name, 
       avatarUrl: emp.avatarUrl,
       iniciales: `${emp.firstName.charAt(0)}${emp.lastName.charAt(0)}`,
+      isActive: emp.isActive,
       estado: emp.isActive ? 'Activo' : 'Inactivo'
     }));
 
     res.json({
       usuario: { 
+        userId: req.user.userId,
         nombre: req.user.nombre, 
         apellido: req.user.apellido,
         puesto: req.user.puesto, 
@@ -153,38 +156,34 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
   }
 });
 
-// 3. NUEVO EMPLEADO (Protegido por Tenant)
+// Crear Empleado (Soporta los 8 roles, salario base y tipo de contrato)
 app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), async (req, res) => {
-  const { nombres, apellidos, email, puesto, rol } = req.body;
+  const { nombres, apellidos, email, puesto, rol, salarioBase, tipoContrato } = req.body;
   
   try {
-    // Busca el rol en base a lo que envíe el frontend
     const roleDb = await prisma.role.findFirst({ where: { name: rol } });
     if (!roleDb) return res.status(400).json({ error: "Rol no válido" });
 
-    const defaultPassword = await bcrypt.hash('Password123!', 10);
+    const defaultPassword = await bcrypt.hash('Admin123!', 10);
     const avatarUrlPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
-
-    // Generar un número de empleado aleatorio de 6 dígitos para pruebas
     const randomEmployeeNumber = String(Math.floor(100000 + Math.random() * 900000));
 
-    // Crear el usuario asegurando que pertenezca al mismo Tenant del usuario que lo crea
     const nuevoUsuario = await prisma.user.create({
       data: {
         numeroEmpleado: randomEmployeeNumber,
-        email: email,
+        email,
         password: defaultPassword,
-        firstName: nombres,       // Ahora en User
-        lastName: apellidos,      // Ahora en User
-        avatarUrl: avatarUrlPath, // Ahora en User
+        firstName: nombres,
+        lastName: apellidos,
+        avatarUrl: avatarUrlPath,
         tenantId: req.user.tenantId,
         roleId: roleDb.id,
         hrProfile: {
           create: {
             position: puesto,
             hireDate: new Date(),
-            baseSalary: 15000.00,
-            contractType: 'Indefinido',
+            baseSalary: salarioBase ? parseFloat(salarioBase) : 15000.00,
+            contractType: tipoContrato || 'Indefinido',
             tenantId: req.user.tenantId
           }
         }
@@ -194,7 +193,223 @@ app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), asyn
     res.status(201).json({ message: "Empleado creado con éxito", user: nuevoUsuario });
   } catch (error) {
     console.error("Error al crear empleado:", error);
-    res.status(500).json({ error: "No se pudo registrar el empleado" });
+    res.status(500).json({ error: "No se pudo registrar el empleado (verifica que el correo no esté duplicado)" });
+  }
+});
+
+// Editar Empleado y Baja Lógica (Soft Delete)
+app.put('/api/hr/empleados/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { nombres, apellidos, puesto, rol, salarioBase, tipoContrato, isActive } = req.body;
+
+  try {
+    const roleDb = await prisma.role.findFirst({ where: { name: rol } });
+    if (!roleDb) return res.status(400).json({ error: "Rol no válido" });
+
+    const empleadoActualizado = await prisma.user.update({
+      where: { id },
+      data: {
+        firstName: nombres,
+        lastName: apellidos,
+        roleId: roleDb.id,
+        isActive: Boolean(isActive),
+        hrProfile: {
+          upsert: {
+            create: {
+              position: puesto,
+              hireDate: new Date(),
+              baseSalary: parseFloat(salarioBase),
+              contractType: tipoContrato,
+              tenantId: req.user.tenantId
+            },
+            update: {
+              position: puesto,
+              baseSalary: parseFloat(salarioBase),
+              contractType: tipoContrato
+            }
+          }
+        }
+      }
+    });
+
+    res.json({ message: "Expediente actualizado", empleado: empleadoActualizado });
+  } catch (error) {
+    console.error("Error al actualizar empleado:", error);
+    res.status(500).json({ error: "No se pudo actualizar el expediente" });
+  }
+});
+
+// ==========================================
+// 2. MÓDULO DE EQUIPOS TI (IT_Asset)
+// ==========================================
+app.get('/api/it/equipos', verificarToken, async (req, res) => {
+  try {
+    const equipos = await prisma.iT_Asset.findMany({
+      where: { tenantId: req.user.tenantId },
+      include: { assignedTo: { select: { id: true, firstName: true, lastName: true, numeroEmpleado: true, email: true } } }
+    });
+    res.json(equipos);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener inventario de TI" });
+  }
+});
+
+app.post('/api/it/equipos', verificarToken, async (req, res) => {
+  const { serialNumber, deviceType, model, status, assignedToId } = req.body;
+  try {
+    const nuevoEquipo = await prisma.iT_Asset.create({
+      data: {
+        serialNumber,
+        deviceType,
+        model,
+        status: assignedToId ? 'Asignado' : (status || 'Disponible'),
+        assignedToId: assignedToId || null,
+        tenantId: req.user.tenantId
+      }
+    });
+    res.status(201).json(nuevoEquipo);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al registrar equipo TI" });
+  }
+});
+
+app.put('/api/it/equipos/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { status, assignedToId } = req.body;
+  try {
+    const equipo = await prisma.iT_Asset.update({
+      where: { id },
+      data: {
+        status,
+        assignedToId: assignedToId || null
+      }
+    });
+    res.json(equipo);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al actualizar equipo TI" });
+  }
+});
+
+// ==========================================
+// 3. MÓDULO DE FINANZAS Y NÓMINA (Finance_Payroll)
+// ==========================================
+app.get('/api/finanzas/nominas', verificarToken, async (req, res) => {
+  try {
+    const nominas = await prisma.finance_Payroll.findMany({
+      where: { tenantId: req.user.tenantId },
+      include: { user: { select: { firstName: true, lastName: true, numeroEmpleado: true, email: true, hrProfile: true } } },
+      orderBy: { paymentDate: 'desc' }
+    });
+    res.json(nominas);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al cargar historial de nóminas" });
+  }
+});
+
+app.post('/api/finanzas/nominas', verificarToken, async (req, res) => {
+  const { userId, amountNet, status } = req.body;
+  try {
+    const nuevaNomina = await prisma.finance_Payroll.create({
+      data: {
+        userId,
+        amountNet: parseFloat(amountNet),
+        status: status || 'Pagado',
+        paymentDate: new Date(),
+        tenantId: req.user.tenantId
+      }
+    });
+
+    // Disparo automático de notificación al empleado
+    await prisma.notification.create({
+      data: {
+        message: `Tu recibo de nómina por $${ parseFloat(amountNet).toFixed(2) } ha sido procesado (${ status || 'Pagado' }).`,
+        userId,
+        tenantId: req.user.tenantId
+      }
+    });
+
+    res.status(201).json(nuevaNomina);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al dispersar la nómina" });
+  }
+});
+
+// ==========================================
+// 4. MÓDULO HELPDESK TRANSVERSAL (Ticket)
+// ==========================================
+app.get('/api/tickets', verificarToken, async (req, res) => {
+  try {
+    const filtro = { tenantId: req.user.tenantId };
+    // Si es Operativo, solo ve los tickets que él mismo levantó
+    if (req.user.rolSistema === 'Operativo') {
+      filtro.creatorId = req.user.userId;
+    }
+
+    const tickets = await prisma.ticket.findMany({
+      where: filtro,
+      include: {
+        creator: { select: { firstName: true, lastName: true, numeroEmpleado: true, email: true } },
+        assignedTo: { select: { id: true, firstName: true, lastName: true, email: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(tickets);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener los tickets" });
+  }
+});
+
+app.post('/api/tickets', verificarToken, async (req, res) => {
+  const { title, description, targetArea } = req.body;
+  try {
+    const nuevoTicket = await prisma.ticket.create({
+      data: {
+        title,
+        description,
+        targetArea,
+        status: 'PENDING',
+        creatorId: req.user.userId,
+        tenantId: req.user.tenantId
+      }
+    });
+    res.status(201).json(nuevoTicket);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al crear el ticket" });
+  }
+});
+
+app.put('/api/tickets/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { status, assignedToId } = req.body;
+  try {
+    const ticketActualizado = await prisma.ticket.update({
+      where: { id },
+      data: {
+        status,
+        assignedToId: assignedToId || req.user.userId,
+        resolvedAt: status === 'RESOLVED' ? new Date() : null
+      }
+    });
+
+    await prisma.notification.create({
+      data: {
+        message: `Tu ticket "${ticketActualizado.title}" cambió de estado a ${status}.`,
+        userId: ticketActualizado.creatorId,
+        tenantId: req.user.tenantId
+      }
+    });
+
+    res.json(ticketActualizado);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al actualizar el ticket" });
   }
 });
 
