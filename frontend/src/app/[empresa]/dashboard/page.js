@@ -226,8 +226,8 @@ export default function DashboardEmpresa() {
                       <tr key={empleado.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center space-x-3">
-                            {empleado.avatarUrl ? (
-                              <img src={`http://localhost:4000${empleado.avatarUrl}`} alt={empleado.nombreCompleto} className="h-8 w-8 rounded-full object-cover border border-gray-200" />
+                           {empleado.avatarUrl ? (
+                              <img src={`${process.env.NEXT_PUBLIC_BACKEND_URL}${empleado.avatarUrl}`} alt={empleado.nombreCompleto} className="h-8 w-8 rounded-full object-cover border border-gray-200" />
                             ) : (
                               <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">{empleado.iniciales}</div>
                             )}
