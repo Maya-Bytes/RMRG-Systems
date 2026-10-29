@@ -88,8 +88,8 @@ export default function DashboardEmpresa() {
     }
 
     try {
-      // Nueva ruta protegida sin exponer el slug de la empresa
-      const res = await fetch(`http://localhost:4000/api/dashboard/empleados`, {
+     // Nueva ruta protegida sin exponer el slug de la empresa
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/dashboard/empleados`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }, 
         body: paqueteDatos
