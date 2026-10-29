@@ -13,7 +13,7 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 
 // ==========================================
-// CONFIGURACIÓN DE MULTER (Carga de Imágenes)
+// CONFIGURACIÓN DE MULTER (Carga de Imágenes .PNG)
 // ==========================================
 const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
 if (!fs.existsSync(avatarsDir)) {
@@ -39,7 +39,7 @@ const upload = multer({
 });
 
 // ==========================================
-// MIDDLEWARES
+// MIDDLEWARES Y HELPER DE AUDITORÍA (Caja Negra)
 // ==========================================
 app.use(cors()); 
 app.use(express.json()); 
@@ -56,6 +56,17 @@ const verificarToken = (req, res, next) => {
     req.user = user;
     next();
   });
+};
+
+// Función auxiliar para registrar eventos en Audit_Log
+const registrarAuditoria = async (action, tableName, recordId, userId, tenantId) => {
+  try {
+    await prisma.audit_Log.create({
+      data: { action, tableName, recordId: String(recordId), userId, tenantId }
+    });
+  } catch (err) {
+    console.error("Error al registrar auditoría:", err);
+  }
 };
 
 // ==========================================
@@ -98,7 +109,14 @@ app.post('/api/auth/login', async (req, res) => {
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' });
-    return res.status(200).json({ message: "Login exitoso", token, tenant: user.tenant.name });
+    await registrarAuditoria('LOGIN_EXITOSO', 'User', user.numeroEmpleado, user.id, user.tenantId);
+
+    return res.status(200).json({
+      message: "Login exitoso",
+      token,
+      tenant: user.tenant.name,
+      themeColor: user.tenant.themeColor
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Error interno del servidor" });
@@ -106,13 +124,17 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ==========================================
-// 1. RESUMEN Y MÓDULO DE RECURSOS HUMANOS
+// 1. RESUMEN, TEMA CORPORATIVO Y RECURSOS HUMANOS
 // ==========================================
 app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
   try {
-    const totalEmpleados = await prisma.user.count({ where: { tenantId: req.user.tenantId, isActive: true } });
-    const totalEquipos = await prisma.iT_Asset.count({ where: { tenantId: req.user.tenantId, status: 'Asignado' } });
-    const ticketsAbiertos = await prisma.ticket.count({ where: { tenantId: req.user.tenantId, status: { in: ['PENDING', 'IN_PROGRESS'] } } });
+    const [tenant, usuarioActual, totalEmpleados, totalEquipos, ticketsAbiertos] = await Promise.all([
+      prisma.tenant.findUnique({ where: { id: req.user.tenantId } }),
+      prisma.user.findUnique({ where: { id: req.user.userId }, include: { hrProfile: true, role: true } }),
+      prisma.user.count({ where: { tenantId: req.user.tenantId, isActive: true } }),
+      prisma.iT_Asset.count({ where: { tenantId: req.user.tenantId, status: 'Asignado' } }),
+      prisma.ticket.count({ where: { tenantId: req.user.tenantId, status: { in: ['PENDING', 'IN_PROGRESS'] } } })
+    ]);
 
     const listaEmpleados = await prisma.user.findMany({
       where: { tenantId: req.user.tenantId }, 
@@ -139,13 +161,21 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
     }));
 
     res.json({
+      tenant: {
+        name: tenant?.name || 'Corporativo',
+        subdomain: tenant?.subdomain || '',
+        themeColor: tenant?.themeColor || '#2563eb'
+      },
       usuario: { 
         userId: req.user.userId,
-        nombre: req.user.nombre, 
-        apellido: req.user.apellido,
-        puesto: req.user.puesto, 
-        iniciales: req.user.iniciales, 
-        rolSistema: req.user.rolSistema 
+        numeroEmpleado: usuarioActual?.numeroEmpleado || req.user.numeroEmpleado,
+        email: usuarioActual?.email || '',
+        nombre: usuarioActual?.firstName || req.user.nombre, 
+        apellido: usuarioActual?.lastName || req.user.apellido,
+        puesto: usuarioActual?.hrProfile ? usuarioActual.hrProfile.position : req.user.puesto, 
+        iniciales: `${(usuarioActual?.firstName || req.user.nombre).charAt(0)}${(usuarioActual?.lastName || req.user.apellido).charAt(0)}`, 
+        avatarUrl: usuarioActual?.avatarUrl || null,
+        rolSistema: usuarioActual?.role ? usuarioActual.role.name : req.user.rolSistema 
       }, 
       metricas: { empleados: totalEmpleados, equipos: totalEquipos, tickets: ticketsAbiertos },
       empleados: empleadosFormateados
@@ -156,7 +186,7 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
   }
 });
 
-// Crear Empleado (Soporta los 8 roles, salario base y tipo de contrato)
+// Crear Empleado
 app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), async (req, res) => {
   const { nombres, apellidos, email, puesto, rol, salarioBase, tipoContrato } = req.body;
   
@@ -190,6 +220,8 @@ app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), asyn
       }
     });
 
+    await registrarAuditoria(`ALTA_EMPLEADO (${randomEmployeeNumber} - ${nombres} ${apellidos})`, 'User', nuevoUsuario.numeroEmpleado, req.user.userId, req.user.tenantId);
+
     res.status(201).json({ message: "Empleado creado con éxito", user: nuevoUsuario });
   } catch (error) {
     console.error("Error al crear empleado:", error);
@@ -197,7 +229,7 @@ app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), asyn
   }
 });
 
-// Editar Empleado y Baja Lógica (Soft Delete)
+// Editar Empleado y Baja Lógica
 app.put('/api/hr/empleados/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
   const { nombres, apellidos, puesto, rol, salarioBase, tipoContrato, isActive } = req.body;
@@ -231,6 +263,9 @@ app.put('/api/hr/empleados/:id', verificarToken, async (req, res) => {
         }
       }
     });
+
+    const tipoAccion = Boolean(isActive) ? `EDICION_EXPEDIENTE (${empleadoActualizado.numeroEmpleado})` : `BAJA_LOGICA_EMPLEADO (${empleadoActualizado.numeroEmpleado})`;
+    await registrarAuditoria(tipoAccion, 'HR_Profile', empleadoActualizado.numeroEmpleado, req.user.userId, req.user.tenantId);
 
     res.json({ message: "Expediente actualizado", empleado: empleadoActualizado });
   } catch (error) {
@@ -268,6 +303,19 @@ app.post('/api/it/equipos', verificarToken, async (req, res) => {
         tenantId: req.user.tenantId
       }
     });
+
+    await registrarAuditoria(`REGISTRO_ACTIVO_TI (${serialNumber} - ${model})`, 'IT_Asset', serialNumber, req.user.userId, req.user.tenantId);
+
+    if (assignedToId) {
+      await prisma.notification.create({
+        data: {
+          message: `Se te ha asignado el equipo ${deviceType} ${model} (Serie: ${serialNumber}).`,
+          userId: assignedToId,
+          tenantId: req.user.tenantId
+        }
+      });
+    }
+
     res.status(201).json(nuevoEquipo);
   } catch (error) {
     console.error(error);
@@ -286,6 +334,19 @@ app.put('/api/it/equipos/:id', verificarToken, async (req, res) => {
         assignedToId: assignedToId || null
       }
     });
+
+    await registrarAuditoria(`ACTUALIZACION_ACTIVO_TI (${equipo.serialNumber} -> ${status})`, 'IT_Asset', equipo.serialNumber, req.user.userId, req.user.tenantId);
+
+    if (assignedToId) {
+      await prisma.notification.create({
+        data: {
+          message: `Actualización de tu equipo ${equipo.deviceType} (${equipo.serialNumber}): Estado ${status}.`,
+          userId: assignedToId,
+          tenantId: req.user.tenantId
+        }
+      });
+    }
+
     res.json(equipo);
   } catch (error) {
     console.error(error);
@@ -300,7 +361,7 @@ app.get('/api/finanzas/nominas', verificarToken, async (req, res) => {
   try {
     const nominas = await prisma.finance_Payroll.findMany({
       where: { tenantId: req.user.tenantId },
-      include: { user: { select: { firstName: true, lastName: true, numeroEmpleado: true, email: true, hrProfile: true } } },
+      include: { user: { select: { id: true, firstName: true, lastName: true, numeroEmpleado: true, email: true, hrProfile: true } } },
       orderBy: { paymentDate: 'desc' }
     });
     res.json(nominas);
@@ -323,14 +384,15 @@ app.post('/api/finanzas/nominas', verificarToken, async (req, res) => {
       }
     });
 
-    // Disparo automático de notificación al empleado
     await prisma.notification.create({
       data: {
-        message: `Tu recibo de nómina por $${ parseFloat(amountNet).toFixed(2) } ha sido procesado (${ status || 'Pagado' }).`,
+        message: `💰 Tu recibo de nómina por $${parseFloat(amountNet).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ha sido dispersado (${status || 'Pagado'}).`,
         userId,
         tenantId: req.user.tenantId
       }
     });
+
+    await registrarAuditoria(`DISPERSION_NOMINA ($${parseFloat(amountNet).toFixed(2)})`, 'Finance_Payroll', nuevaNomina.id.slice(0, 8), req.user.userId, req.user.tenantId);
 
     res.status(201).json(nuevaNomina);
   } catch (error) {
@@ -345,7 +407,6 @@ app.post('/api/finanzas/nominas', verificarToken, async (req, res) => {
 app.get('/api/tickets', verificarToken, async (req, res) => {
   try {
     const filtro = { tenantId: req.user.tenantId };
-    // Si es Operativo, solo ve los tickets que él mismo levantó
     if (req.user.rolSistema === 'Operativo') {
       filtro.creatorId = req.user.userId;
     }
@@ -378,6 +439,9 @@ app.post('/api/tickets', verificarToken, async (req, res) => {
         tenantId: req.user.tenantId
       }
     });
+
+    await registrarAuditoria(`CREACION_TICKET_[${targetArea}] (${title})`, 'Ticket', nuevoTicket.id.slice(0, 8), req.user.userId, req.user.tenantId);
+
     res.status(201).json(nuevoTicket);
   } catch (error) {
     console.error(error);
@@ -400,16 +464,109 @@ app.put('/api/tickets/:id', verificarToken, async (req, res) => {
 
     await prisma.notification.create({
       data: {
-        message: `Tu ticket "${ticketActualizado.title}" cambió de estado a ${status}.`,
+        message: `🛠️ Tu ticket "${ticketActualizado.title}" cambió de estado a ${status}.`,
         userId: ticketActualizado.creatorId,
         tenantId: req.user.tenantId
       }
     });
 
+    await registrarAuditoria(`CAMBIO_ESTADO_TICKET (${ticketActualizado.title} -> ${status})`, 'Ticket', id.slice(0, 8), req.user.userId, req.user.tenantId);
+
     res.json(ticketActualizado);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al actualizar el ticket" });
+  }
+});
+
+// ==========================================
+// 5. CAMPANA DE NOTIFICACIONES (Notification)
+// ==========================================
+app.get('/api/notificaciones', verificarToken, async (req, res) => {
+  try {
+    const notificaciones = await prisma.notification.findMany({
+      where: { userId: req.user.userId, tenantId: req.user.tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    });
+    res.json(notificaciones);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener notificaciones" });
+  }
+});
+
+app.put('/api/notificaciones/leer-todas', verificarToken, async (req, res) => {
+  try {
+    await prisma.notification.updateMany({
+      where: { userId: req.user.userId, tenantId: req.user.tenantId, isRead: false },
+      data: { isRead: true }
+    });
+    res.json({ message: "Todas las notificaciones marcadas como leídas" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al actualizar notificaciones" });
+  }
+});
+
+app.put('/api/notificaciones/:id/leer', verificarToken, async (req, res) => {
+  try {
+    const notif = await prisma.notification.update({
+      where: { id: req.params.id },
+      data: { isRead: true }
+    });
+    res.json(notif);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al marcar notificación" });
+  }
+});
+
+// ==========================================
+// 6. CAJA NEGRA DE AUDITORÍA (Audit_Log)
+// ==========================================
+app.get('/api/auditoria', verificarToken, async (req, res) => {
+  try {
+    const logs = await prisma.audit_Log.findMany({
+      where: { tenantId: req.user.tenantId },
+      include: {
+        user: { select: { firstName: true, lastName: true, numeroEmpleado: true, email: true, role: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    res.json(logs);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener registros de auditoría" });
+  }
+});
+
+// ==========================================
+// 7. CONFIGURACIÓN DE MI CUENTA (Perfil / Password)
+// ==========================================
+app.put('/api/perfil', verificarToken, upload.single('foto'), async (req, res) => {
+  const { nuevaPassword } = req.body;
+  try {
+    const dataToUpdate = {};
+    if (nuevaPassword && nuevaPassword.trim().length >= 6) {
+      dataToUpdate.password = await bcrypt.hash(nuevaPassword, 10);
+    }
+    if (req.file) {
+      dataToUpdate.avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    }
+
+    const userActualizado = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: dataToUpdate
+    });
+
+    await registrarAuditoria('ACTUALIZACION_PERFIL_PROPIO', 'User', userActualizado.numeroEmpleado, req.user.userId, req.user.tenantId);
+
+    res.json({ message: "Perfil actualizado correctamente", avatarUrl: userActualizado.avatarUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al actualizar tu perfil" });
   }
 });
 
