@@ -15,12 +15,10 @@ async function main() {
   await prisma.tenant.deleteMany();
   await prisma.system_Admin.deleteMany();
 
-  console.log('🌱 Iniciando sembrado OPTIMIZADO de datos...');
+  console.log('🌱 Iniciando sembrado OPTIMIZADO con jerarquía salarial...');
   const defaultPassword = await bcrypt.hash('Admin123!', 10);
 
-  // ==========================================
   // 0. CREAR USUARIO MODO DIOS (System_Admin)
-  // ==========================================
   const rawMasterKey = 'RMRG-MASTER-KEY-9f8a7b6c5d4e3f2a1-GODMODE';
   const hashedMasterKey = await bcrypt.hash(rawMasterKey, 10);
 
@@ -32,7 +30,6 @@ async function main() {
       name: 'Carlos Maya (System Owner)'
     }
   });
-  console.log('⚡ Cuenta Modo Dios (juanmaya400@gmail.com) creada con éxito.');
 
   const corporativos = [
     { name: 'The Coca-Cola Company', subdomain: 'cocacola', emailDomain: 'coca-cola.com', theme: '#F40009' },
@@ -41,7 +38,6 @@ async function main() {
     { name: 'Amazon Web Services', subdomain: 'aws', emailDomain: 'amazon.com', theme: '#FF9900' }
   ];
 
-  console.log('🔑 Creando Roles del sistema...');
   const roles = {
     SUPER: await prisma.role.create({ data: { name: 'Super Administrador', permissions: { all: true } } }),
     ADMIN_HR: await prisma.role.create({ data: { name: 'Admin de Recursos Humanos', permissions: { hr: 'write' } } }),
@@ -62,7 +58,7 @@ async function main() {
       data: { name: corp.name, subdomain: corp.subdomain, emailDomain: corp.emailDomain, themeColor: corp.theme }
     });
 
-    const createUser = async (email, roleId, firstName, lastName, position) => {
+    const createUser = async (email, roleId, firstName, lastName, position, baseSalary, contractType = 'Indefinido') => {
       globalEmployeeId++;
       return await prisma.user.create({
         data: {
@@ -77,8 +73,8 @@ async function main() {
             create: {
               position, 
               hireDate: new Date(), 
-              baseSalary: 10000 + (Math.random() * 20000), 
-              contractType: 'Indefinido', 
+              baseSalary, 
+              contractType, 
               tenantId: tenant.id
             }
           }
@@ -86,34 +82,52 @@ async function main() {
       });
     };
 
-    await createUser(`superadmin@${corp.emailDomain}`, roles.SUPER.id, 'Global', 'Admin', 'Director General');
-    const adminHR = await createUser(`admin.rh@${corp.emailDomain}`, roles.ADMIN_HR.id, 'Director', 'Recursos Humanos', 'Gerente de HR');
-    const adminIT = await createUser(`admin.it@${corp.emailDomain}`, roles.ADMIN_IT.id, 'Director', 'Sistemas', 'Gerente de IT');
-    await createUser(`admin.finanzas@${corp.emailDomain}`, roles.ADMIN_FIN.id, 'Director', 'Finanzas', 'Contralor General');
-
-    const userHR = await createUser(`user.rh@${corp.emailDomain}`, roles.USER_HR.id, 'Analista', 'HR', 'Especialista HR');
-    const userIT = await createUser(`user.it@${corp.emailDomain}`, roles.USER_IT.id, 'Ingeniero', 'Soporte', 'Soporte Técnico');
-    await createUser(`user.finanzas@${corp.emailDomain}`, roles.USER_FIN.id, 'Auxiliar', 'Contable', 'Contador Jr');
-
-    const operador = await createUser(`operador@${corp.emailDomain}`, roles.BASIC.id, 'Juan', 'Pérez', 'Operador de Planta');
-
-    await prisma.iT_Asset.create({ data: { serialNumber: `LT-${corp.subdomain.toUpperCase()}-01`, deviceType: 'Laptop', model: 'Dell Latitude', status: 'Asignado', assignedToId: operador.id, tenantId: tenant.id }});
-    await prisma.finance_Payroll.create({ data: { paymentDate: new Date(), amountNet: 12500.50, status: 'Pagado', userId: operador.id, tenantId: tenant.id }});
-
-    await prisma.ticket.create({
-      data: { title: 'Falla en el monitor', description: 'La pantalla parpadea constantemente.', targetArea: 'IT', creatorId: operador.id, tenantId: tenant.id }
-    });
+    // Jerarquía salarial coherente
+    await createUser(`superadmin@${corp.emailDomain}`, roles.SUPER.id, 'Global', 'Admin', 'Director General', 65000.00);
     
+    const adminHR = await createUser(`admin.rh@${corp.emailDomain}`, roles.ADMIN_HR.id, 'Director', 'Recursos Humanos', 'Gerente de HR', 38000.00);
+    const adminIT = await createUser(`admin.it@${corp.emailDomain}`, roles.ADMIN_IT.id, 'Director', 'Sistemas', 'Gerente de IT', 38000.00);
+    const adminFin = await createUser(`admin.finanzas@${corp.emailDomain}`, roles.ADMIN_FIN.id, 'Director', 'Finanzas', 'Contralor General', 38000.00);
+
+    const userHR = await createUser(`user.rh@${corp.emailDomain}`, roles.USER_HR.id, 'Analista', 'HR', 'Especialista HR', 22000.00);
+    const userIT = await createUser(`user.it@${corp.emailDomain}`, roles.USER_IT.id, 'Ingeniero', 'Soporte', 'Soporte Técnico', 22000.00);
+    const userFin = await createUser(`user.finanzas@${corp.emailDomain}`, roles.USER_FIN.id, 'Auxiliar', 'Contable', 'Contador Jr', 22000.00, 'Temporal');
+
+    const operador = await createUser(`operador@${corp.emailDomain}`, roles.BASIC.id, 'Juan', 'Pérez', 'Operador de Planta', 12500.00);
+
+    // Equipos de TI de prueba
+    await prisma.iT_Asset.create({
+      data: { serialNumber: `LT-${corp.subdomain.toUpperCase()}-01`, deviceType: 'Laptop', model: 'Dell Latitude 5420', status: 'Asignado', assignedToId: operador.id, tenantId: tenant.id }
+    });
+    await prisma.iT_Asset.create({
+      data: { serialNumber: `MN-${corp.subdomain.toUpperCase()}-02`, deviceType: 'Monitor', model: 'Samsung Curvo 27"', status: 'Disponible', assignedToId: null, tenantId: tenant.id }
+    });
+
+    // Nómina inicial
+    await prisma.finance_Payroll.create({
+      data: { paymentDate: new Date(), amountNet: 12500.00, status: 'Pagado', userId: operador.id, tenantId: tenant.id }
+    });
+
+    // Tickets distribuidos por departamento (IT, HR, FINANCE)
     await prisma.ticket.create({
-      data: { title: 'Nueva laptop para reclutamiento', description: 'Necesitamos un equipo para el nuevo ingreso.', status: 'IN_PROGRESS', targetArea: 'IT', creatorId: adminHR.id, assignedToId: userIT.id, tenantId: tenant.id }
+      data: { title: 'Falla en el monitor', description: 'La pantalla parpadea constantemente en línea de producción.', targetArea: 'IT', creatorId: operador.id, tenantId: tenant.id }
+    });
+    await prisma.ticket.create({
+      data: { title: 'Nueva laptop para reclutamiento', description: 'Necesitamos un equipo configurado para el nuevo ingreso.', status: 'IN_PROGRESS', targetArea: 'IT', creatorId: adminHR.id, assignedToId: userIT.id, tenantId: tenant.id }
+    });
+    await prisma.ticket.create({
+      data: { title: 'Actualización de días de vacaciones', description: 'Solicito revisión de mis días disponibles por aniversario.', targetArea: 'HR', creatorId: userIT.id, tenantId: tenant.id }
+    });
+    await prisma.ticket.create({
+      data: { title: 'Aclaración de retención ISR en recibo', description: 'Deseo revisar el desglose de impuestos de esta quincena.', targetArea: 'FINANCE', creatorId: userHR.id, tenantId: tenant.id }
     });
 
     await prisma.notification.create({
-      data: { message: 'Tu nómina ha sido depositada.', userId: operador.id, tenantId: tenant.id }
+      data: { message: '💰 Tu recibo de nómina por $12,500.00 ha sido dispersado (Pagado).', userId: operador.id, tenantId: tenant.id }
     });
   }
 
-  console.log('\n🎉 ¡SEMILLERO EXITOSO! Modo Dios + 4 Corporativos listos para probar.');
+  console.log('\n🎉 ¡SEMILLERO EXITOSO! Jerarquía salarial y tickets multi-área listos.');
 }
 
 main().catch(e => { console.error(e); process.exit(1); }).finally(async () => { await prisma.$disconnect(); });

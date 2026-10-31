@@ -52,7 +52,6 @@ export default function DashboardEmpresa() {
   const [listaAuditoria, setListaAuditoria] = useState([]);
   const [filtroAreaTicket, setFiltroAreaTicket] = useState("TODOS");
 
-  // Estado para Gafete QR
   const [empleadoGafete, setEmpleadoGafete] = useState(null);
 
   // Estados de Modales
@@ -73,9 +72,6 @@ export default function DashboardEmpresa() {
   });
 
   const [showModalNomina, setShowModalNomina] = useState(false);
-  const [formNomina, setFormNomina] = useState({
-    userId: '', amountNet: '', status: 'Pagado'
-  });
 
   const [showModalTicket, setShowModalTicket] = useState(false);
   const [formTicket, setFormTicket] = useState({
@@ -93,7 +89,6 @@ export default function DashboardEmpresa() {
   const colorMarca = tenantInfo.themeColor || "#2563eb";
   const notificacionesNoLeidas = listaNotificaciones.filter(n => !n.isRead).length;
 
-  // Resuelve tanto imágenes Base64 persistentes como rutas relativas antiguas
   const resolverAvatar = (avatarUrl) => {
     if (!avatarUrl) return null;
     if (avatarUrl.startsWith("data:image") || avatarUrl.startsWith("http")) return avatarUrl;
@@ -215,7 +210,7 @@ export default function DashboardEmpresa() {
       email: emp.email,
       puesto: emp.puesto,
       rol: emp.rol,
-      salarioBase: String(emp.salarioBase || 15000),
+      salarioBase: String(emp.salarioBase || 0),
       tipoContrato: emp.tipoContrato || 'Indefinido',
       isActive: emp.isActive
     });
@@ -309,25 +304,35 @@ export default function DashboardEmpresa() {
     cargarTodo();
   };
 
-  const seleccionarEmpleadoNomina = (userId) => {
-    const emp = listaEmpleados.find(e => e.id === userId);
-    setFormNomina({ ...formNomina, userId, amountNet: emp ? String(emp.salarioBase) : '' });
+  const actualizarSalarioTabulador = async (userId, salarioBase) => {
+    const token = localStorage.getItem('rmrg_token');
+    const res = await fetch(`${API_URL}/api/finanzas/salario/${userId}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ salarioBase })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert("Error: " + err.error);
+    }
+    cargarTodo();
   };
 
-  const guardarNomina = async (e) => {
-    e.preventDefault();
+  const guardarNominaLote = async (pagos) => {
     setGuardando(true);
     const token = localStorage.getItem('rmrg_token');
     try {
-      const res = await fetch(`${API_URL}/api/finanzas/nominas`, {
+      const res = await fetch(`${API_URL}/api/finanzas/nominas/lote`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(formNomina)
+        body: JSON.stringify({ pagos })
       });
       if (res.ok) {
         setShowModalNomina(false);
-        setFormNomina({ userId: '', amountNet: '', status: 'Pagado' });
         cargarTodo();
+      } else {
+        const err = await res.json();
+        alert("Error: " + err.error);
       }
     } finally {
       setGuardando(false);
@@ -356,29 +361,50 @@ export default function DashboardEmpresa() {
 
   const cambiarEstadoTicket = async (id, nuevoStatus) => {
     const token = localStorage.getItem('rmrg_token');
-    await fetch(`${API_URL}/api/tickets/${id}`, {
+    const res = await fetch(`${API_URL}/api/tickets/${id}`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: nuevoStatus })
     });
+    if (!res.ok) {
+      const err = await res.json();
+      alert("⚠️ " + err.error);
+    }
     cargarTodo();
   };
 
   if (!autorizado) return null;
 
+  const rol = perfil.rolSistema;
+  const esSuperAdmin = rol === "Super Administrador";
+  const esRH = ["Admin de Recursos Humanos", "Analista HR"].includes(rol);
+  const esTI = ["Admin de IT", "Soporte IT"].includes(rol);
+  const esFinanzas = ["Admin de Finanzas", "Contador"].includes(rol);
+  const esOperativo = rol === "Operativo";
+
   const menuOptions = [
     { name: "Resumen", icon: <LayoutDashboard size={20} />, show: true },
-    { name: "Recursos Humanos", icon: <Users size={20} />, show: ["Super Administrador", "Admin de Recursos Humanos", "Analista HR"].includes(perfil.rolSistema) },
-    { name: "Equipos TI", icon: <Laptop size={20} />, show: ["Super Administrador", "Admin de IT", "Soporte IT"].includes(perfil.rolSistema) },
-    { name: "Finanzas", icon: <CircleDollarSign size={20} />, show: ["Super Administrador", "Admin de Finanzas", "Contador"].includes(perfil.rolSistema) },
+    { name: "Recursos Humanos", icon: <Users size={20} />, show: esSuperAdmin || esRH },
+    { name: "Equipos TI", icon: <Laptop size={20} />, show: esSuperAdmin || esTI },
+    { name: "Finanzas", icon: <CircleDollarSign size={20} />, show: esSuperAdmin || esFinanzas },
     { name: "Helpdesk Tickets", icon: <Ticket size={20} />, show: true },
-    { name: "Auditoría", icon: <ShieldAlert size={20} />, show: perfil.rolSistema === "Super Administrador" },
+    { name: "Auditoría", icon: <ShieldAlert size={20} />, show: esSuperAdmin },
   ];
   const menusVisibles = menuOptions.filter(item => item.show);
 
+  // Cálculos específicos por departamento para no cruzar datos
   const misEquipos = listaEquipos.filter(eq => eq.assignedToId === perfil.userId);
   const misNominas = listaNominas.filter(nom => nom.user?.id === perfil.userId || nom.userId === perfil.userId);
   const misTicketsAbiertos = listaTickets.filter(t => t.status !== 'RESOLVED').length;
+
+  const ticketsAbiertosRH = listaTickets.filter(t => t.targetArea === "HR" && t.status !== "RESOLVED").length;
+  const ticketsAbiertosTI = listaTickets.filter(t => t.targetArea === "IT" && t.status !== "RESOLVED").length;
+  const ticketsAbiertosFin = listaTickets.filter(t => t.targetArea === "FINANCE" && t.status !== "RESOLVED").length;
+
+  const contratosIndefinidos = listaEmpleados.filter(e => e.isActive && e.tipoContrato === "Indefinido").length;
+  const equiposDisponibles = listaEquipos.filter(eq => eq.status === "Disponible").length;
+  const masaSalarialActiva = listaEmpleados.filter(e => e.isActive).reduce((acc, e) => acc + Number(e.salarioBase || 0), 0);
+
   const ticketsFiltrados = listaTickets.filter(t => filtroAreaTicket === "TODOS" ? true : t.targetArea === filtroAreaTicket);
   const miAvatarSrc = resolverAvatar(perfil.avatarUrl);
 
@@ -524,8 +550,8 @@ export default function DashboardEmpresa() {
         </header>
 
         <main className="flex-1 p-6 overflow-y-auto relative">
-          {/* TARJETAS DE MÉTRICAS */}
-          {perfil.rolSistema === 'Operativo' ? (
+          {/* TARJETAS DE MÉTRICAS PERSONALIZADAS POR DEPARTAMENTO */}
+          {esOperativo && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                 <p className="text-sm font-medium text-gray-500">Mis Equipos Asignados</p>
@@ -542,7 +568,62 @@ export default function DashboardEmpresa() {
                 <h3 className="text-2xl font-bold mt-1" style={{ color: colorMarca }}>{misTicketsAbiertos}</h3>
               </div>
             </div>
-          ) : (
+          )}
+
+          {esRH && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Colaboradores Activos (RH)</p>
+                <h3 className="text-2xl font-bold text-gray-900 mt-1">{metricas.empleados}</h3>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Contratos Indefinidos Vigentes</p>
+                <h3 className="text-2xl font-bold text-gray-900 mt-1">{contratosIndefinidos}</h3>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Tickets de Recursos Humanos</p>
+                <h3 className="text-2xl font-bold mt-1" style={{ color: colorMarca }}>{ticketsAbiertosRH}</h3>
+              </div>
+            </div>
+          )}
+
+          {esTI && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Total Activos Hardware TI</p>
+                <h3 className="text-2xl font-bold text-gray-900 mt-1">{listaEquipos.length}</h3>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Asignados / En Almacén</p>
+                <h3 className="text-2xl font-bold text-gray-900 mt-1">{metricas.equipos} / {equiposDisponibles}</h3>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Tickets de Soporte TI Abiertos</p>
+                <h3 className="text-2xl font-bold mt-1" style={{ color: colorMarca }}>{ticketsAbiertosTI}</h3>
+              </div>
+            </div>
+          )}
+
+          {esFinanzas && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Masa Salarial Mensual Activa</p>
+                <h3 className="text-2xl font-bold text-emerald-700 mt-1">
+                  ${masaSalarialActiva.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                </h3>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Recibos de Nómina Emitidos</p>
+                <h3 className="text-2xl font-bold text-gray-900 mt-1">{listaNominas.length}</h3>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-sm font-medium text-gray-500">Tickets de Finanzas Abiertos</p>
+                <h3 className="text-2xl font-bold mt-1" style={{ color: colorMarca }}>{ticketsAbiertosFin}</h3>
+              </div>
+            </div>
+          )}
+
+          {esSuperAdmin && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                 <p className="text-sm font-medium text-gray-500">Empleados Activos</p>
@@ -553,15 +634,16 @@ export default function DashboardEmpresa() {
                 <h3 className="text-2xl font-bold text-gray-900 mt-1">{metricas.equipos}</h3>
               </div>
               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                <p className="text-sm font-medium text-gray-500">Tickets Abiertos</p>
+                <p className="text-sm font-medium text-gray-500">Tickets Abiertos (Global)</p>
                 <h3 className="text-2xl font-bold mt-1" style={{ color: colorMarca }}>{metricas.tickets}</h3>
               </div>
             </div>
           )}
 
-          {/* GRÁFICAS INTERACTIVAS EN EL RESUMEN EJECUTIVO */}
-          {moduloActivo === "Resumen" && perfil.rolSistema !== "Operativo" && (
+          {/* GRÁFICAS INTERACTIVAS EN EL RESUMEN ADAPTADAS AL ROL */}
+          {moduloActivo === "Resumen" && !esOperativo && (
             <VistaAnalitica
+              perfil={perfil}
               listaEmpleados={listaEmpleados}
               listaTickets={listaTickets}
               listaEquipos={listaEquipos}
@@ -569,8 +651,8 @@ export default function DashboardEmpresa() {
             />
           )}
 
-          {/* VISTAS MODULARES */}
-          {(moduloActivo === "Resumen" || moduloActivo === "Recursos Humanos") && (
+          {/* VISTAS MODULARES POR DEPARTAMENTO (Sin cruce de información en Resumen) */}
+          {(moduloActivo === "Recursos Humanos" || (moduloActivo === "Resumen" && (esSuperAdmin || esRH || esOperativo))) && (
             <VistaRH
               perfil={perfil}
               tenantInfo={tenantInfo}
@@ -589,7 +671,7 @@ export default function DashboardEmpresa() {
             />
           )}
 
-          {moduloActivo === "Equipos TI" && (
+          {(moduloActivo === "Equipos TI" || (moduloActivo === "Resumen" && esTI)) && (
             <VistaTI
               perfil={perfil}
               tenantInfo={tenantInfo}
@@ -602,14 +684,16 @@ export default function DashboardEmpresa() {
             />
           )}
 
-          {moduloActivo === "Finanzas" && (
+          {(moduloActivo === "Finanzas" || (moduloActivo === "Resumen" && esFinanzas)) && (
             <VistaFinanzas
               listaNominas={listaNominas}
+              listaEmpleados={listaEmpleados}
               empresa={empresa}
               tenantInfo={tenantInfo}
               perfil={perfil}
               colorMarca={colorMarca}
               abrirModalNomina={() => setShowModalNomina(true)}
+              actualizarSalarioTabulador={actualizarSalarioTabulador}
             />
           )}
 
@@ -617,6 +701,7 @@ export default function DashboardEmpresa() {
             <VistaTickets
               perfil={perfil}
               colorMarca={colorMarca}
+              listaTickets={listaTickets}
               ticketsFiltrados={ticketsFiltrados}
               filtroAreaTicket={filtroAreaTicket}
               setFiltroAreaTicket={setFiltroAreaTicket}
@@ -643,6 +728,7 @@ export default function DashboardEmpresa() {
 
       {/* MODALES CENTRALIZADOS */}
       <ModalesERP
+        perfil={perfil}
         colorMarca={colorMarca}
         dominioCorporativo={dominioCorporativo}
         guardando={guardando}
@@ -678,10 +764,7 @@ export default function DashboardEmpresa() {
         guardarEquipo={guardarEquipo}
         showModalNomina={showModalNomina}
         setShowModalNomina={setShowModalNomina}
-        formNomina={formNomina}
-        setFormNomina={setFormNomina}
-        seleccionarEmpleadoNomina={seleccionarEmpleadoNomina}
-        guardarNomina={guardarNomina}
+        guardarNominaLote={guardarNominaLote}
         showModalTicket={showModalTicket}
         setShowModalTicket={setShowModalTicket}
         formTicket={formTicket}

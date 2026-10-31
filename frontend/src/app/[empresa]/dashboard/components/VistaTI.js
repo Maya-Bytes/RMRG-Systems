@@ -11,12 +11,33 @@ export default function VistaTI({
   actualizarEquipo,
   abrirModalEquipo
 }) {
+  const handleCambioEmpleado = (eq, nuevoEmpleadoId) => {
+    if (nuevoEmpleadoId) {
+      actualizarEquipo(eq.id, "Asignado", nuevoEmpleadoId);
+    } else {
+      actualizarEquipo(eq.id, "Disponible", null);
+    }
+  };
+
+  const handleCambioEstado = (eq, nuevoEstado) => {
+    if (nuevoEstado === "Disponible" || nuevoEstado === "En Reparación") {
+      // Validación doble: si pasa a Disponible o En Reparación, se quita el empleado asignado
+      actualizarEquipo(eq.id, nuevoEstado, null);
+    } else if (nuevoEstado === "Asignado") {
+      if (!eq.assignedToId) {
+        alert("Selecciona primero un empleado en la columna 'Empleado Asignado' para marcar el equipo como Asignado.");
+        return;
+      }
+      actualizarEquipo(eq.id, "Asignado", eq.assignedToId);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="px-6 py-5 border-b border-gray-200 flex flex-wrap gap-3 justify-between items-center bg-gray-50/50">
         <div>
           <h3 className="text-lg font-semibold text-gray-800">Inventario de Hardware y Activos TI</h3>
-          <p className="text-xs text-gray-500">Control de laptops, números de serie, exportación y cartas responsivas en PDF</p>
+          <p className="text-xs text-gray-500">Control de laptops, números de serie, asignación validada y cartas responsivas en PDF</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -25,11 +46,11 @@ export default function VistaTI({
           >
             <FileSpreadsheet size={15} /> Exportar Inventario (.xlsx)
           </button>
-          {["Super Administrador", "Admin de IT"].includes(perfil.rolSistema) && (
+          {["Super Administrador", "Admin de IT", "Soporte IT"].includes(perfil.rolSistema) && (
             <button
               onClick={abrirModalEquipo}
               style={{ backgroundColor: colorMarca }}
-              className="text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+              className="text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm"
             >
               <Plus size={15} /> Registrar Equipo
             </button>
@@ -56,11 +77,11 @@ export default function VistaTI({
                 <td className="px-6 py-4 text-sm">
                   <select
                     value={eq.assignedToId || ""}
-                    onChange={(e) => actualizarEquipo(eq.id, e.target.value ? "Asignado" : "Disponible", e.target.value || null)}
+                    onChange={(e) => handleCambioEmpleado(eq, e.target.value)}
                     className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-900 font-medium"
                   >
                     <option value="">-- Sin asignar (En almacén) --</option>
-                    {listaEmpleados.map(emp => (
+                    {listaEmpleados.filter(e => e.isActive).map(emp => (
                       <option key={emp.id} value={emp.id}>{emp.numeroEmpleado} - {emp.nombreCompleto}</option>
                     ))}
                   </select>
@@ -68,14 +89,14 @@ export default function VistaTI({
                 <td className="px-6 py-4">
                   <select
                     value={eq.status}
-                    onChange={(e) => actualizarEquipo(eq.id, e.target.value, eq.assignedToId)}
+                    onChange={(e) => handleCambioEstado(eq, e.target.value)}
                     className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
                       eq.status === 'Asignado' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                       eq.status === 'Disponible' ? 'bg-green-50 text-green-700 border-green-200' :
                       'bg-amber-50 text-amber-700 border-amber-200'
                     }`}
                   >
-                    <option value="Disponible" className="text-slate-900 bg-white">Disponible</option>
+                    <option value="Disponible" className="text-slate-900 bg-white">Disponible (En almacén)</option>
                     <option value="Asignado" className="text-slate-900 bg-white">Asignado</option>
                     <option value="En Reparación" className="text-slate-900 bg-white">En Reparación</option>
                   </select>

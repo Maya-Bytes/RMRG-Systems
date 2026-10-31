@@ -23,7 +23,18 @@ export default function VistaRH({
   abrirModalGafete,
   irANuevoTicket
 }) {
-  const ctxReporte = { listaEmpleados, tenantInfo, perfil, metricas, colorMarca, dominioCorporativo, empresa };
+  // Solo el Super Administrador ve salarios dentro del directorio de RH
+  const mostrarSalariosEnRH = perfil.rolSistema === "Super Administrador";
+  const ctxReporte = {
+    listaEmpleados,
+    tenantInfo,
+    perfil,
+    metricas,
+    colorMarca,
+    dominioCorporativo,
+    empresa,
+    incluirSalarios: mostrarSalariosEnRH
+  };
 
   if (perfil.rolSistema === "Operativo") {
     return (
@@ -101,13 +112,13 @@ export default function VistaRH({
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="px-6 py-5 border-b border-gray-200 flex flex-wrap gap-3 justify-between items-center bg-gray-50/50">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">Directorio, Gafetes QR y Reporteador de RH</h3>
-          <p className="text-xs text-gray-500">Expedientes salariales, credenciales digitales con QR, Excel y Constancias en PDF</p>
+          <h3 className="text-lg font-semibold text-gray-800">Directorio, Gafetes QR y Expedientes de RH</h3>
+          <p className="text-xs text-gray-500">Gestión de puestos, modalidad de contratos, credenciales digitales con QR y Constancias en PDF</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => exportarEmpleadosExcel(listaEmpleados, empresa)}
+            onClick={() => exportarEmpleadosExcel(listaEmpleados, empresa, mostrarSalariosEnRH)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
           >
             <FileSpreadsheet size={15} /> Exportar Excel (.xlsx)
@@ -137,7 +148,8 @@ export default function VistaRH({
               <th className="px-6 py-4 font-semibold">ID / Empleado</th>
               <th className="px-6 py-4 font-semibold">Rol en Sistema</th>
               <th className="px-6 py-4 font-semibold">Puesto / Contrato</th>
-              <th className="px-6 py-4 font-semibold">Salario Base</th>
+              {mostrarSalariosEnRH && <th className="px-6 py-4 font-semibold">Salario Base</th>}
+              <th className="px-6 py-4 font-semibold">Fecha Ingreso</th>
               <th className="px-6 py-4 font-semibold">Estado</th>
               <th className="px-6 py-4 font-semibold text-right">Herramientas RH</th>
             </tr>
@@ -170,8 +182,13 @@ export default function VistaRH({
                     <p className="text-sm font-medium text-gray-800">{empleado.puesto}</p>
                     <p className="text-xs text-gray-500">{empleado.tipoContrato}</p>
                   </td>
-                  <td className="px-6 py-4 text-sm font-semibold text-gray-800">
-                    ${Number(empleado.salarioBase).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                  {mostrarSalariosEnRH && (
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-800">
+                      ${Number(empleado.salarioBase).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    </td>
+                  )}
+                  <td className="px-6 py-4 text-xs text-gray-600">
+                    {new Date(empleado.fechaIngreso).toLocaleDateString('es-MX', { dateStyle: 'medium' })}
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${empleado.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
@@ -182,14 +199,12 @@ export default function VistaRH({
                     <button
                       onClick={() => abrirModalGafete(empleado)}
                       className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 inline-flex items-center gap-1 transition-colors"
-                      title="Ver Gafete Digital con Código QR"
                     >
                       <QrCode size={14} /> Gafete QR
                     </button>
                     <button
                       onClick={() => descargarConstanciaLaboralPDF(empleado, ctxReporte)}
                       className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 inline-flex items-center gap-1 transition-colors"
-                      title="Descargar Constancia Laboral en PDF"
                     >
                       <FileText size={14} /> Constancia
                     </button>

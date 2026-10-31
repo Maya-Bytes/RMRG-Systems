@@ -2,37 +2,171 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
   PieChart, Pie, Cell, Legend, CartesianGrid
 } from "recharts";
-import { BarChart3, PieChart as PieIcon, Laptop } from "lucide-react";
+import { BarChart3, PieChart as PieIcon, Laptop, Users, CircleDollarSign } from "lucide-react";
 
-const COLORES_AREAS = ["#2563eb", "#10b981", "#f59e0b", "#8b5cf6"];
-const COLORES_EQUIPOS = {
-  "Asignado": "#2563eb",
-  "Disponible": "#10b981",
-  "En Reparación": "#f59e0b"
-};
+const COLORES_PASTEL = ["#2563eb", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
 
 export default function VistaAnalitica({
-  listaEmpleados,
-  listaTickets,
-  listaEquipos,
+  perfil,
+  listaEmpleados = [],
+  listaTickets = [],
+  listaEquipos = [],
   colorMarca
 }) {
-  // 1. Masa salarial agrupada por Rol en Sistema
-  const mapaRoles = {};
-  listaEmpleados.filter(e => e.isActive).forEach(emp => {
+  const rol = perfil?.rolSistema || "";
+  const esRH = ["Admin de Recursos Humanos", "Analista HR"].includes(rol);
+  const esTI = ["Admin de IT", "Soporte IT"].includes(rol);
+
+  const empleadosActivos = listaEmpleados.filter(e => e.isActive);
+
+  // =========================================================
+  // CASO 1: ANALÍTICA EXCLUSIVA PARA RECURSOS HUMANOS (Sin Sueldos)
+  // =========================================================
+  if (esRH) {
+    const mapaRolesRH = {};
+    empleadosActivos.forEach(emp => {
+      const rolCorto = emp.rol
+        .replace("Admin de ", "Adm. ")
+        .replace("Recursos Humanos", "RH")
+        .replace("Super Administrador", "Dirección");
+      if (!mapaRolesRH[rolCorto]) mapaRolesRH[rolCorto] = { rol: rolCorto, colaboradores: 0 };
+      mapaRolesRH[rolCorto].colaboradores += 1;
+    });
+    const dataHeadcount = Object.values(mapaRolesRH);
+
+    const conteoContratos = { Indefinido: 0, Temporal: 0, Honorarios: 0 };
+    empleadosActivos.forEach(emp => {
+      conteoContratos[emp.tipoContrato] = (conteoContratos[emp.tipoContrato] || 0) + 1;
+    });
+    const dataContratos = Object.entries(conteoContratos)
+      .map(([name, value]) => ({ name, value }))
+      .filter(i => i.value > 0);
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm lg:col-span-2">
+          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Users size={17} style={{ color: colorMarca }} />
+            Distribución de Plantilla Activa por Rol (Headcount)
+          </h4>
+          <p className="text-xs text-slate-500 mb-4">Número de colaboradores activos por puesto y área</p>
+          <div className="h-60 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dataHeadcount}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="rol" tick={{ fontSize: 11, fill: "#475569" }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#475569" }} />
+                <Tooltip formatter={(val) => [`${val} colaborador(es)`, "Plantilla"]} />
+                <Bar dataKey="colaboradores" fill={colorMarca} radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
+          <div>
+            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <PieIcon size={17} style={{ color: colorMarca }} />
+              Modalidad de Contratos RH
+            </h4>
+            <p className="text-xs text-slate-500">Proporción de contratos vigentes</p>
+          </div>
+          <div className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={dataContratos} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={72} paddingAngle={4}>
+                  {dataContratos.map((_, i) => <Cell key={i} fill={COLORES_PASTEL[i % COLORES_PASTEL.length]} />)}
+                </Pie>
+                <Tooltip />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: "11px" }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================
+  // CASO 2: ANALÍTICA EXCLUSIVA PARA SISTEMAS / TI
+  // =========================================================
+  if (esTI) {
+    const mapaTipos = {};
+    listaEquipos.forEach(eq => {
+      if (!mapaTipos[eq.deviceType]) mapaTipos[eq.deviceType] = { tipo: eq.deviceType, cantidad: 0 };
+      mapaTipos[eq.deviceType].cantidad += 1;
+    });
+    const dataTiposHardware = Object.values(mapaTipos);
+
+    const conteoEstados = { Asignado: 0, Disponible: 0, "En Reparación": 0 };
+    listaEquipos.forEach(eq => {
+      conteoEstados[eq.status] = (conteoEstados[eq.status] || 0) + 1;
+    });
+    const dataEstadosTI = Object.entries(conteoEstados)
+      .map(([name, value]) => ({ name, value }))
+      .filter(i => i.value > 0);
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm lg:col-span-2">
+          <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Laptop size={17} style={{ color: colorMarca }} />
+            Inventario Tecnológico por Tipo de Dispositivo
+          </h4>
+          <p className="text-xs text-slate-500 mb-4">Unidades registradas en el padrón de TI</p>
+          <div className="h-60 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dataTiposHardware}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="tipo" tick={{ fontSize: 11, fill: "#475569" }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#475569" }} />
+                <Tooltip formatter={(val) => [`${val} unidad(es)`, "Activos TI"]} />
+                <Bar dataKey="cantidad" fill={colorMarca} radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
+          <div>
+            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <PieIcon size={17} style={{ color: colorMarca }} />
+              Disponibilidad de Hardware TI
+            </h4>
+            <p className="text-xs text-slate-500">Asignados vs. Disponibles en almacén</p>
+          </div>
+          <div className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={dataEstadosTI} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={72} paddingAngle={4}>
+                  {dataEstadosTI.map((_, i) => <Cell key={i} fill={COLORES_PASTEL[i % COLORES_PASTEL.length]} />)}
+                </Pie>
+                <Tooltip />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: "11px" }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================
+  // CASO 3: FINANZAS Y SUPER ADMINISTRADOR (Masa Salarial y Global)
+  // =========================================================
+  const mapaSalarios = {};
+  empleadosActivos.forEach(emp => {
     const rolCorto = emp.rol
       .replace("Admin de ", "Adm. ")
       .replace("Recursos Humanos", "RH")
       .replace("Super Administrador", "Super Admin");
-    if (!mapaRoles[rolCorto]) {
-      mapaRoles[rolCorto] = { rol: rolCorto, salarioTotal: 0, empleados: 0 };
+    if (!mapaSalarios[rolCorto]) {
+      mapaSalarios[rolCorto] = { rol: rolCorto, salarioTotal: 0 };
     }
-    mapaRoles[rolCorto].salarioTotal += Number(emp.salarioBase || 0);
-    mapaRoles[rolCorto].empleados += 1;
+    mapaSalarios[rolCorto].salarioTotal += Number(emp.salarioBase || 0);
   });
-  const dataSalariosPorRol = Object.values(mapaRoles);
+  const dataSalariosPorRol = Object.values(mapaSalarios);
 
-  // 2. Tickets agrupados por Área Destino (IT, HR, FINANCE, GENERAL)
   const conteoAreas = { IT: 0, HR: 0, FINANCE: 0, GENERAL: 0 };
   listaTickets.forEach(tk => {
     conteoAreas[tk.targetArea] = (conteoAreas[tk.targetArea] || 0) + 1;
@@ -44,28 +178,16 @@ export default function VistaAnalitica({
     { name: "General", value: conteoAreas.GENERAL }
   ].filter(item => item.value > 0);
 
-  // 3. Estado del Inventario de Hardware TI
-  const conteoEquipos = { "Asignado": 0, "Disponible": 0, "En Reparación": 0 };
-  listaEquipos.forEach(eq => {
-    conteoEquipos[eq.status] = (conteoEquipos[eq.status] || 0) + 1;
-  });
-  const dataEquipos = Object.entries(conteoEquipos).map(([name, cantidad]) => ({
-    name,
-    cantidad,
-    fill: COLORES_EQUIPOS[name] || "#64748b"
-  }));
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-      {/* GRÁFICA 1: MASA SALARIAL POR ROL */}
       <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm lg:col-span-2">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <BarChart3 size={17} style={{ color: colorMarca }} />
+              <CircleDollarSign size={17} style={{ color: colorMarca }} />
               Distribución de Masa Salarial Mensual por Rol (MXN)
             </h4>
-            <p className="text-xs text-slate-500">Suma de sueldos base de colaboradores activos</p>
+            <p className="text-xs text-slate-500">Suma de sueldos base de colaboradores activos en el tabulador</p>
           </div>
         </div>
         <div className="h-64 w-full">
@@ -87,7 +209,6 @@ export default function VistaAnalitica({
         </div>
       </div>
 
-      {/* GRÁFICA 2: DEMANDA DE HELPDESK POR DEPARTAMENTO */}
       <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
         <div>
           <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
@@ -97,7 +218,7 @@ export default function VistaAnalitica({
           <p className="text-xs text-slate-500">Distribución de solicitudes en Helpdesk</p>
         </div>
 
-        <div className="h-52 w-full">
+        <div className="h-56 w-full">
           {dataTicketsArea.length === 0 ? (
             <div className="h-full flex items-center justify-center text-xs text-slate-400">
               Sin tickets registrados
@@ -116,7 +237,7 @@ export default function VistaAnalitica({
                   paddingAngle={4}
                 >
                   {dataTicketsArea.map((_, index) => (
-                    <Cell key={index} fill={COLORES_AREAS[index % COLORES_AREAS.length]} />
+                    <Cell key={index} fill={COLORES_PASTEL[index % COLORES_PASTEL.length]} />
                   ))}
                 </Pie>
                 <Tooltip contentStyle={{ borderRadius: "10px", fontSize: "12px" }} />
@@ -124,20 +245,6 @@ export default function VistaAnalitica({
               </PieChart>
             </ResponsiveContainer>
           )}
-        </div>
-
-        {/* MINI INDICADOR DE ACTIVOS TI */}
-        <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-          <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-            <Laptop size={14} /> Estado Hardware TI:
-          </span>
-          <div className="flex gap-2">
-            {dataEquipos.map((eq) => (
-              <span key={eq.name} className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold text-[11px]">
-                {eq.name}: {eq.cantidad}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
-import { X, UploadCloud, Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, UploadCloud, Sparkles, CheckSquare, Square } from "lucide-react";
 
 const ROLES_SISTEMA = [
   "Super Administrador",
@@ -12,10 +13,11 @@ const ROLES_SISTEMA = [
 ];
 
 export default function ModalesERP({
+  perfil,
   colorMarca,
   dominioCorporativo,
   guardando,
-  listaEmpleados,
+  listaEmpleados = [],
   // Modal Perfil
   showModalPerfil, setShowModalPerfil, guardarMiPerfil, nuevaPassword, setNuevaPassword,
   fotoPerfilPreview, setFotoPerfilFile, setFotoPerfilPreview,
@@ -26,13 +28,75 @@ export default function ModalesERP({
   fotoFile, setFotoFile, fotoPreview, setFotoPreview, handleImageChange,
   // Modal Equipo TI
   showModalEquipo, setShowModalEquipo, formEquipo, setFormEquipo, guardarEquipo,
-  // Modal Nómina
-  showModalNomina, setShowModalNomina, formNomina, setFormNomina, seleccionarEmpleadoNomina, guardarNomina,
+  // Modal Nómina Masiva
+  showModalNomina, setShowModalNomina, guardarNominaLote,
   // Modal Ticket
   showModalTicket, setShowModalTicket, formTicket, setFormTicket, guardarTicket
 }) {
   const inputStyle = "w-full text-sm px-3.5 py-2.5 bg-white text-slate-900 font-medium placeholder:text-slate-400 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-slate-800 transition-colors";
   const labelStyle = "block text-xs font-bold text-slate-700 mb-1.5";
+
+  const esSuperAdmin = perfil?.rolSistema === "Super Administrador";
+  const puedeDarBaja = ["Super Administrador", "Admin de Recursos Humanos"].includes(perfil?.rolSistema);
+
+  // Estado local para la tabla interactiva de Dispersión Masiva de Nómina
+  const [filasNomina, setFilasNomina] = useState([]);
+
+  useEffect(() => {
+    if (showModalNomina) {
+      const activos = listaEmpleados.filter(e => e.isActive).map(emp => ({
+        userId: emp.id,
+        numeroEmpleado: emp.numeroEmpleado,
+        nombreCompleto: emp.nombreCompleto,
+        puesto: emp.puesto,
+        salarioBase: Number(emp.salarioBase || 0),
+        bono: "",
+        descuento: "",
+        seleccionado: false
+      }));
+      setFilasNomina(activos);
+    }
+  }, [showModalNomina, listaEmpleados]);
+
+  const toggleSeleccionEmpleado = (userId) => {
+    setFilasNomina(prev => prev.map(f => f.userId === userId ? { ...f, seleccionado: !f.seleccionado } : f));
+  };
+
+  const toggleSeleccionarTodos = () => {
+    const todosMarcados = filasNomina.every(f => f.seleccionado);
+    setFilasNomina(prev => prev.map(f => ({ ...f, seleccionado: !todosMarcados })));
+  };
+
+  const actualizarMontoFila = (userId, campo, valor) => {
+    setFilasNomina(prev => prev.map(f => f.userId === userId ? { ...f, [campo]: valor, seleccionado: true } : f));
+  };
+
+  const calcularNetoFila = (f) => {
+    const base = Number(f.salarioBase || 0);
+    const bono = parseFloat(f.bono || 0) || 0;
+    const desc = parseFloat(f.descuento || 0) || 0;
+    return Math.max(0, +(base + bono - desc).toFixed(2));
+  };
+
+  const seleccionados = filasNomina.filter(f => f.seleccionado);
+  const granTotalNeto = seleccionados.reduce((acc, f) => acc + calcularNetoFila(f), 0);
+
+  const submitNominaMasiva = (e) => {
+    e.preventDefault();
+    if (seleccionados.length === 0) {
+      alert("Marca al menos un empleado en la tabla para emitir su pago.");
+      return;
+    }
+    const payloadPagos = seleccionados.map(f => ({
+      userId: f.userId,
+      numeroEmpleado: f.numeroEmpleado,
+      salarioBase: f.salarioBase,
+      bono: parseFloat(f.bono || 0) || 0,
+      descuento: parseFloat(f.descuento || 0) || 0,
+      amountNet: calcularNetoFila(f)
+    }));
+    guardarNominaLote(payloadPagos);
+  };
 
   return (
     <>
@@ -67,7 +131,7 @@ export default function ModalesERP({
                         <UploadCloud size={22} />
                       </div>
                       <p className="text-xs font-bold text-slate-700">Haz clic o arrastra una imagen <span className="underline" style={{ color: colorMarca }}>.PNG</span></p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Tamaño recomendado: cuadrado (ej. 400x400 px)</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Se guarda de forma permanente en la base de datos</p>
                     </div>
                   )}
                 </div>
@@ -93,12 +157,12 @@ export default function ModalesERP({
         </div>
       )}
 
-      {/* MODAL 1: ALTA / EDICIÓN DE EMPLEADO (HR) */}
+      {/* MODAL 1: ALTA / EDICIÓN DE EMPLEADO (RH asigna puesto/contrato; Finanzas asigna salario) */}
       {showModalEmpleado && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-              <h3 className="text-lg font-bold text-slate-900">{modoEdicionEmpleado ? 'Editar Expediente de Empleado' : 'Alta de Nuevo Empleado'}</h3>
+              <h3 className="text-lg font-bold text-slate-900">{modoEdicionEmpleado ? 'Editar Expediente Laboral (RH)' : 'Alta de Nuevo Empleado (RH)'}</h3>
               <button onClick={() => setShowModalEmpleado(false)} className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg"><X size={20} /></button>
             </div>
 
@@ -180,31 +244,35 @@ export default function ModalesERP({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className={`grid grid-cols-1 ${esSuperAdmin ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
                 <div>
                   <label className={labelStyle}>Puesto Interno</label>
                   <input
                     required
                     type="text"
-                    placeholder="Ej. Gerente de Planta"
+                    placeholder="Ej. Analista de Calidad"
                     value={formEmpleado.puesto}
                     onChange={e => setFormEmpleado({...formEmpleado, puesto: e.target.value})}
                     className={inputStyle}
                   />
                 </div>
+
+                {esSuperAdmin && (
+                  <div>
+                    <label className={labelStyle}>Salario Base Mensual ($)</label>
+                    <input
+                      required
+                      type="number"
+                      step="0.01"
+                      value={formEmpleado.salarioBase}
+                      onChange={e => setFormEmpleado({...formEmpleado, salarioBase: e.target.value})}
+                      className={inputStyle}
+                    />
+                  </div>
+                )}
+
                 <div>
-                  <label className={labelStyle}>Salario Base Mensual ($)</label>
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    value={formEmpleado.salarioBase}
-                    onChange={e => setFormEmpleado({...formEmpleado, salarioBase: e.target.value})}
-                    className={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label className={labelStyle}>Tipo de Contrato</label>
+                  <label className={labelStyle}>Modalidad de Contrato</label>
                   <select
                     value={formEmpleado.tipoContrato}
                     onChange={e => setFormEmpleado({...formEmpleado, tipoContrato: e.target.value})}
@@ -217,18 +285,26 @@ export default function ModalesERP({
                 </div>
               </div>
 
-              {modoEdicionEmpleado ? (
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                  <label className="inline-flex items-center gap-2.5 text-sm font-bold text-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formEmpleado.isActive}
-                      onChange={e => setFormEmpleado({...formEmpleado, isActive: e.target.checked})}
-                      className="w-4 h-4 rounded text-blue-600"
-                    />
-                    Empleado Activo en la Empresa (Desmarcar para aplicar Baja Lógica)
-                  </label>
+              {!esSuperAdmin && (
+                <div className="p-3 rounded-lg bg-blue-50/70 border border-blue-200 text-xs text-blue-800">
+                  ℹ️ <strong>Nota de control interno:</strong> La asignación y ajuste del Salario Base Mensual corresponde exclusivamente al departamento de <strong>Finanzas</strong> desde su Tabulador Salarial.
                 </div>
+              )}
+
+              {modoEdicionEmpleado ? (
+                puedeDarBaja && (
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <label className="inline-flex items-center gap-2.5 text-sm font-bold text-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formEmpleado.isActive}
+                        onChange={e => setFormEmpleado({...formEmpleado, isActive: e.target.checked})}
+                        className="w-4 h-4 rounded text-blue-600"
+                      />
+                      Empleado Activo en la Empresa (Desmarcar para aplicar Baja Lógica)
+                    </label>
+                  </div>
+                )
               ) : (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -256,18 +332,16 @@ export default function ModalesERP({
                         <div className="text-left">
                           <p className="text-xs font-bold text-emerald-700">✓ Imagen .PNG lista para subir</p>
                           <p className="text-xs text-slate-600 truncate max-w-[220px]">{fotoFile?.name}</p>
-                          <p className="text-[11px] text-slate-400 mt-1">Haz clic sobre el recuadro si deseas cambiarla</p>
                         </div>
                       </div>
                     ) : (
                       <div className="text-center p-4 flex flex-col items-center">
-                        <div className="bg-white p-3 rounded-full shadow-sm mb-2 border border-slate-200 group-hover:scale-105 transition-transform" style={{ color: colorMarca }}>
+                        <div className="bg-white p-3 rounded-full shadow-sm mb-2 border border-slate-200" style={{ color: colorMarca }}>
                           <UploadCloud size={24} />
                         </div>
                         <p className="text-xs font-bold text-slate-700">
                           Haz clic aquí o arrastra la foto en formato <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-900 font-mono">.PNG</span>
                         </p>
-                        <p className="text-[11px] text-slate-500 mt-1">Si no subes una foto, se asignará un avatar con sus iniciales</p>
                       </div>
                     )}
                   </div>
@@ -319,7 +393,7 @@ export default function ModalesERP({
                 <label className={labelStyle}>Asignar a Empleado (Opcional)</label>
                 <select value={formEquipo.assignedToId} onChange={e => setFormEquipo({...formEquipo, assignedToId: e.target.value})} className={inputStyle}>
                   <option value="">-- Dejar Disponible en Almacén --</option>
-                  {listaEmpleados.map(emp => <option key={emp.id} value={emp.id}>{emp.numeroEmpleado} - {emp.nombreCompleto}</option>)}
+                  {listaEmpleados.filter(e => e.isActive).map(emp => <option key={emp.id} value={emp.id}>{emp.numeroEmpleado} - {emp.nombreCompleto}</option>)}
                 </select>
               </div>
               <div className="pt-3 flex justify-end gap-2">
@@ -331,31 +405,112 @@ export default function ModalesERP({
         </div>
       )}
 
-      {/* MODAL 3: DISPERSAR NÓMINA */}
+      {/* MODAL 3: CONSOLA DINÁMICA DE DISPERSIÓN DE NÓMINA (INDIVIDUAL O MASIVA CON BONOS Y DESCUENTOS) */}
       {showModalNomina && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-              <h3 className="text-lg font-bold text-slate-900">Dispersar Pago de Nómina</h3>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Consola de Dispersión de Nómina (Individual y Masiva)</h3>
+                <p className="text-xs text-slate-500">Selecciona uno o varios trabajadores, aplica bonos o descuentos y emite el pago en lote</p>
+              </div>
               <button onClick={() => setShowModalNomina(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
-            <form onSubmit={guardarNomina} className="p-6 space-y-4">
-              <div>
-                <label className={labelStyle}>Seleccionar Empleado</label>
-                <select required value={formNomina.userId} onChange={e => seleccionarEmpleadoNomina(e.target.value)} className={inputStyle}>
-                  <option value="">Selecciona un trabajador...</option>
-                  {listaEmpleados.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.numeroEmpleado} - {emp.nombreCompleto} (${emp.salarioBase})</option>
-                  ))}
-                </select>
+
+            <form onSubmit={submitNominaMasiva} className="flex flex-col flex-1 overflow-hidden">
+              <div className="px-6 py-3 bg-emerald-50/70 border-b border-emerald-100 flex flex-wrap justify-between items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleSeleccionarTodos}
+                  className="text-xs font-bold text-emerald-800 hover:underline flex items-center gap-1.5"
+                >
+                  {filasNomina.length > 0 && filasNomina.every(f => f.seleccionado) ? <CheckSquare size={15} /> : <Square size={15} />}
+                  Seleccionar / Desmarcar todos los empleados activos ({filasNomina.length})
+                </button>
+                <span className="text-xs font-bold text-slate-700">
+                  Empleados marcados: <span className="text-emerald-700">{seleccionados.length}</span>   |   Total a dispersar:{" "}
+                  <span className="text-emerald-700 font-extrabold">
+                    ${granTotalNeto.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN
+                  </span>
+                </span>
               </div>
-              <div>
-                <label className={labelStyle}>Monto Neto a Depositar ($)</label>
-                <input required type="number" step="0.01" value={formNomina.amountNet} onChange={e => setFormNomina({...formNomina, amountNet: e.target.value})} className={inputStyle} />
+
+              <div className="overflow-y-auto flex-1">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-gray-100 text-slate-600 text-[11px] uppercase border-b border-gray-200 z-10">
+                    <tr>
+                      <th className="px-4 py-3 text-center">Pagar</th>
+                      <th className="px-4 py-3">ID / Empleado</th>
+                      <th className="px-4 py-3">Sueldo Base</th>
+                      <th className="px-4 py-3">+ Bono / Extra ($)</th>
+                      <th className="px-4 py-3">- Descuento ($)</th>
+                      <th className="px-4 py-3 text-right">Neto a Depositar</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 text-xs">
+                    {filasNomina.map((fila) => {
+                      const neto = calcularNetoFila(fila);
+                      return (
+                        <tr key={fila.userId} className={fila.seleccionado ? "bg-emerald-50/40" : "hover:bg-gray-50"}>
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={fila.seleccionado}
+                              onChange={() => toggleSeleccionEmpleado(fila.userId)}
+                              className="w-4 h-4 rounded text-emerald-600 cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-bold text-slate-900">{fila.numeroEmpleado} - {fila.nombreCompleto}</p>
+                            <p className="text-[11px] text-slate-500">{fila.puesto}</p>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-slate-800">
+                            ${fila.salarioBase.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                              value={fila.bono}
+                              onChange={(e) => actualizarMontoFila(fila.userId, "bono", e.target.value)}
+                              className="w-28 px-2.5 py-1.5 bg-white text-emerald-700 font-bold border border-slate-300 rounded-lg"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                              value={fila.descuento}
+                              onChange={(e) => actualizarMontoFila(fila.userId, "descuento", e.target.value)}
+                              className="w-28 px-2.5 py-1.5 bg-white text-red-600 font-bold border border-slate-300 rounded-lg"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right font-extrabold text-slate-900">
+                            ${neto.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="pt-3 flex justify-end gap-2">
-                <button type="button" onClick={() => setShowModalNomina(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
-                <button type="submit" disabled={guardando} className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg">Emitir Pago</button>
+
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
+                <span className="text-xs text-slate-500">
+                  Se notificará automáticamente a cada trabajador seleccionado.
+                </span>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setShowModalNomina(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg">
+                    Cancelar
+                  </button>
+                  <button type="submit" disabled={guardando || seleccionados.length === 0} className="px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg shadow-sm">
+                    {guardando ? 'Dispersando...' : `Emitir Pago (${seleccionados.length})`}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
