@@ -8,12 +8,14 @@ import {
   ShieldAlert, CheckCheck
 } from "lucide-react";
 
+import VistaAnalitica from "./components/VistaAnalitica";
 import VistaRH from "./components/VistaRH";
 import VistaTI from "./components/VistaTI";
 import VistaFinanzas from "./components/VistaFinanzas";
 import VistaTickets from "./components/VistaTickets";
 import VistaAuditoria from "./components/VistaAuditoria";
 import ModalesERP from "./components/ModalesERP";
+import ModalGafeteQR from "./components/ModalGafeteQR";
 
 const DOMINIOS_POR_SLUG = {
   thecocacolacompany: "coca-cola.com",
@@ -49,6 +51,9 @@ export default function DashboardEmpresa() {
   const [listaNotificaciones, setListaNotificaciones] = useState([]);
   const [listaAuditoria, setListaAuditoria] = useState([]);
   const [filtroAreaTicket, setFiltroAreaTicket] = useState("TODOS");
+
+  // Estado para Gafete QR
+  const [empleadoGafete, setEmpleadoGafete] = useState(null);
 
   // Estados de Modales
   const [showModalEmpleado, setShowModalEmpleado] = useState(false);
@@ -87,6 +92,13 @@ export default function DashboardEmpresa() {
   const dominioCorporativo = tenantInfo.emailDomain || DOMINIOS_POR_SLUG[empresa] || `${empresa}.com`;
   const colorMarca = tenantInfo.themeColor || "#2563eb";
   const notificacionesNoLeidas = listaNotificaciones.filter(n => !n.isRead).length;
+
+  // Resuelve tanto imágenes Base64 persistentes como rutas relativas antiguas
+  const resolverAvatar = (avatarUrl) => {
+    if (!avatarUrl) return null;
+    if (avatarUrl.startsWith("data:image") || avatarUrl.startsWith("http")) return avatarUrl;
+    return `${API_URL}${avatarUrl}`;
+  };
 
   const limpiarTextoCorreo = (texto) =>
     (texto || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
@@ -144,7 +156,6 @@ export default function DashboardEmpresa() {
     router.replace('/');
   };
 
-  // Notificaciones y Perfil
   const marcarNotificacionLeida = async (id) => {
     const token = localStorage.getItem('rmrg_token');
     await fetch(`${API_URL}/api/notificaciones/${id}/leer`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
@@ -182,7 +193,6 @@ export default function DashboardEmpresa() {
     }
   };
 
-  // Handlers de Empleados (RH)
   const abrirModalNuevoEmpleado = () => {
     setModoEdicionEmpleado(false);
     setEmpleadoEditandoId(null);
@@ -269,7 +279,6 @@ export default function DashboardEmpresa() {
     }
   };
 
-  // Handlers de TI, Nómina y Tickets
   const guardarEquipo = async (e) => {
     e.preventDefault();
     setGuardando(true);
@@ -371,6 +380,7 @@ export default function DashboardEmpresa() {
   const misNominas = listaNominas.filter(nom => nom.user?.id === perfil.userId || nom.userId === perfil.userId);
   const misTicketsAbiertos = listaTickets.filter(t => t.status !== 'RESOLVED').length;
   const ticketsFiltrados = listaTickets.filter(t => filtroAreaTicket === "TODOS" ? true : t.targetArea === filtroAreaTicket);
+  const miAvatarSrc = resolverAvatar(perfil.avatarUrl);
 
   return (
     <div className="flex h-screen bg-gray-50 text-slate-900 overflow-hidden font-sans relative">
@@ -473,9 +483,9 @@ export default function DashboardEmpresa() {
             {/* MENÚ DE PERFIL */}
             <div className="relative">
               <button onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifMenu(false); }} className="flex items-center gap-3 text-left hover:bg-gray-50 p-1.5 rounded-lg transition-colors">
-                {perfil.avatarUrl ? (
+                {miAvatarSrc ? (
                   <img
-                    src={`${API_URL}${perfil.avatarUrl}`}
+                    src={miAvatarSrc}
                     alt="Avatar"
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     className="w-9 h-9 rounded-full object-cover border border-gray-200"
@@ -549,7 +559,17 @@ export default function DashboardEmpresa() {
             </div>
           )}
 
-          {/* RENDERIZADO MODULAR POR SECCIÓN */}
+          {/* GRÁFICAS INTERACTIVAS EN EL RESUMEN EJECUTIVO */}
+          {moduloActivo === "Resumen" && perfil.rolSistema !== "Operativo" && (
+            <VistaAnalitica
+              listaEmpleados={listaEmpleados}
+              listaTickets={listaTickets}
+              listaEquipos={listaEquipos}
+              colorMarca={colorMarca}
+            />
+          )}
+
+          {/* VISTAS MODULARES */}
           {(moduloActivo === "Resumen" || moduloActivo === "Recursos Humanos") && (
             <VistaRH
               perfil={perfil}
@@ -561,9 +581,10 @@ export default function DashboardEmpresa() {
               listaEmpleados={listaEmpleados}
               misEquipos={misEquipos}
               misNominas={misNominas}
-              API_URL={API_URL}
+              resolverAvatar={resolverAvatar}
               abrirModalNuevoEmpleado={abrirModalNuevoEmpleado}
               abrirModalEditarEmpleado={abrirModalEditarEmpleado}
+              abrirModalGafete={(emp) => setEmpleadoGafete(emp)}
               irANuevoTicket={() => { setModuloActivo("Helpdesk Tickets"); setShowModalTicket(true); }}
             />
           )}
@@ -609,6 +630,16 @@ export default function DashboardEmpresa() {
           )}
         </main>
       </div>
+
+      {/* MODAL DE GAFETE CORPORATIVO CON QR */}
+      <ModalGafeteQR
+        empleado={empleadoGafete}
+        onClose={() => setEmpleadoGafete(null)}
+        tenantInfo={tenantInfo}
+        colorMarca={colorMarca}
+        dominioCorporativo={dominioCorporativo}
+        resolverAvatar={resolverAvatar}
+      />
 
       {/* MODALES CENTRALIZADOS */}
       <ModalesERP

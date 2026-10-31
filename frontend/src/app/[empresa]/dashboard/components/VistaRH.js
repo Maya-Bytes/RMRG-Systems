@@ -1,4 +1,4 @@
-import { Laptop, CircleDollarSign, FileText, Download, FileSpreadsheet, Plus, Edit3 } from "lucide-react";
+import { Laptop, CircleDollarSign, FileText, Download, FileSpreadsheet, Plus, Edit3, QrCode } from "lucide-react";
 import {
   exportarEmpleadosExcel,
   exportarPlantillaRHPDF,
@@ -17,9 +17,10 @@ export default function VistaRH({
   listaEmpleados,
   misEquipos,
   misNominas,
-  API_URL,
+  resolverAvatar,
   abrirModalNuevoEmpleado,
   abrirModalEditarEmpleado,
+  abrirModalGafete,
   irANuevoTicket
 }) {
   const ctxReporte = { listaEmpleados, tenantInfo, perfil, metricas, colorMarca, dominioCorporativo, empresa };
@@ -100,8 +101,8 @@ export default function VistaRH({
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="px-6 py-5 border-b border-gray-200 flex flex-wrap gap-3 justify-between items-center bg-gray-50/50">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">Directorio y Reporteador de Recursos Humanos</h3>
-          <p className="text-xs text-gray-500">Expedientes salariales, exportación a Excel y emisión de Constancias Laborales en PDF</p>
+          <h3 className="text-lg font-semibold text-gray-800">Directorio, Gafetes QR y Reporteador de RH</h3>
+          <p className="text-xs text-gray-500">Expedientes salariales, credenciales digitales con QR, Excel y Constancias en PDF</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -138,61 +139,72 @@ export default function VistaRH({
               <th className="px-6 py-4 font-semibold">Puesto / Contrato</th>
               <th className="px-6 py-4 font-semibold">Salario Base</th>
               <th className="px-6 py-4 font-semibold">Estado</th>
-              <th className="px-6 py-4 font-semibold text-right">Expediente y Reportes</th>
+              <th className="px-6 py-4 font-semibold text-right">Herramientas RH</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {listaEmpleados.map((empleado) => (
-              <tr key={empleado.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="flex items-center space-x-3">
-                    {empleado.avatarUrl ? (
-                      <img
-                        src={`${API_URL}${empleado.avatarUrl}`}
-                        alt={empleado.nombreCompleto}
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                        className="h-9 w-9 rounded-full object-cover border border-gray-200"
-                      />
-                    ) : (
-                      <div className="h-9 w-9 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs">{empleado.iniciales}</div>
-                    )}
-                    <div>
-                      <p className="text-sm font-bold text-gray-900">{empleado.numeroEmpleado} - {empleado.nombreCompleto}</p>
-                      <p className="text-xs text-gray-500">{empleado.email}</p>
+            {listaEmpleados.map((empleado) => {
+              const avatarSrc = resolverAvatar(empleado.avatarUrl);
+              return (
+                <tr key={empleado.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center space-x-3">
+                      {avatarSrc ? (
+                        <img
+                          src={avatarSrc}
+                          alt={empleado.nombreCompleto}
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          className="h-9 w-9 rounded-full object-cover border border-gray-200"
+                        />
+                      ) : (
+                        <div className="h-9 w-9 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs">{empleado.iniciales}</div>
+                      )}
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{empleado.numeroEmpleado} - {empleado.nombreCompleto}</p>
+                        <p className="text-xs text-gray-500">{empleado.email}</p>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-700 font-medium">{empleado.rol}</td>
-                <td className="px-6 py-4">
-                  <p className="text-sm font-medium text-gray-800">{empleado.puesto}</p>
-                  <p className="text-xs text-gray-500">{empleado.tipoContrato}</p>
-                </td>
-                <td className="px-6 py-4 text-sm font-semibold text-gray-800">
-                  ${Number(empleado.salarioBase).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                </td>
-                <td className="px-6 py-4">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${empleado.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                    {empleado.estado}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right text-xs font-semibold space-x-2">
-                  <button
-                    onClick={() => descargarConstanciaLaboralPDF(empleado, ctxReporte)}
-                    className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 inline-flex items-center gap-1 transition-colors"
-                  >
-                    <FileText size={14} /> Constancia PDF
-                  </button>
-                  {["Super Administrador", "Admin de Recursos Humanos", "Analista HR"].includes(perfil.rolSistema) && (
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-700 font-medium">{empleado.rol}</td>
+                  <td className="px-6 py-4">
+                    <p className="text-sm font-medium text-gray-800">{empleado.puesto}</p>
+                    <p className="text-xs text-gray-500">{empleado.tipoContrato}</p>
+                  </td>
+                  <td className="px-6 py-4 text-sm font-semibold text-gray-800">
+                    ${Number(empleado.salarioBase).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${empleado.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {empleado.estado}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right text-xs font-semibold space-x-1.5 whitespace-nowrap">
                     <button
-                      onClick={() => abrirModalEditarEmpleado(empleado)}
-                      className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 inline-flex items-center gap-1 transition-colors"
+                      onClick={() => abrirModalGafete(empleado)}
+                      className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 inline-flex items-center gap-1 transition-colors"
+                      title="Ver Gafete Digital con Código QR"
                     >
-                      <Edit3 size={14} /> Editar
+                      <QrCode size={14} /> Gafete QR
                     </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                    <button
+                      onClick={() => descargarConstanciaLaboralPDF(empleado, ctxReporte)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 inline-flex items-center gap-1 transition-colors"
+                      title="Descargar Constancia Laboral en PDF"
+                    >
+                      <FileText size={14} /> Constancia
+                    </button>
+                    {["Super Administrador", "Admin de Recursos Humanos", "Analista HR"].includes(perfil.rolSistema) && (
+                      <button
+                        onClick={() => abrirModalEditarEmpleado(empleado)}
+                        className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 inline-flex items-center gap-1 transition-colors"
+                      >
+                        <Edit3 size={14} /> Editar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
