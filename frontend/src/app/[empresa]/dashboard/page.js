@@ -40,7 +40,7 @@ export default function DashboardEmpresa() {
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [moduloActivo, setModuloActivo] = useState("Resumen");
 
-  const [tenantInfo, setTenantInfo] = useState({ name: "Corporativo", emailDomain: "", themeColor: "#2563eb" });
+  const [tenantInfo, setTenantInfo] = useState({ name: "Corporativo", emailDomain: "", themeColor: "#2563eb", logoUrl: null });
   const [perfil, setPerfil] = useState({ userId: "", numeroEmpleado: "", email: "", nombre: "Cargando...", apellido: "", puesto: "...", iniciales: "-", avatarUrl: null, rolSistema: "" });
   const [metricas, setMetricas] = useState({ empleados: 0, equipos: 0, tickets: 0 });
   
@@ -392,7 +392,6 @@ export default function DashboardEmpresa() {
   ];
   const menusVisibles = menuOptions.filter(item => item.show);
 
-  // Cálculos específicos por departamento para no cruzar datos
   const misEquipos = listaEquipos.filter(eq => eq.assignedToId === perfil.userId);
   const misNominas = listaNominas.filter(nom => nom.user?.id === perfil.userId || nom.userId === perfil.userId);
   const misTicketsAbiertos = listaTickets.filter(t => t.status !== 'RESOLVED').length;
@@ -412,11 +411,25 @@ export default function DashboardEmpresa() {
     <div className="flex h-screen bg-gray-50 text-slate-900 overflow-hidden font-sans relative">
       <div className="fixed top-0 left-0 right-0 h-1 z-50" style={{ backgroundColor: colorMarca }} />
 
-      {/* SIDEBAR */}
+      {/* SIDEBAR CON SOPORTE DE LOGO BASE64 DESDE MODO DIOS */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white border-r border-gray-200 transition-all duration-300 flex flex-col z-20`}>
         <div className="h-16 flex items-center justify-center border-b border-gray-200 p-4">
           <div className="relative w-full h-10 flex items-center justify-center">
-            <Image src={`/assets/images/${empresa}.png`} alt={`Logo ${empresa}`} fill className="object-contain" onError={(e) => { e.currentTarget.srcset = '/assets/images/logo-rmg.png' }} />
+            {tenantInfo.logoUrl ? (
+              <img
+                src={tenantInfo.logoUrl}
+                alt={`Logo ${tenantInfo.name}`}
+                className="max-h-10 max-w-full object-contain"
+              />
+            ) : (
+              <Image
+                src={`/assets/images/${empresa}.png`}
+                alt={`Logo ${empresa}`}
+                fill
+                className="object-contain"
+                onError={(e) => { e.currentTarget.srcset = '/assets/images/logo-rmg.png'; }}
+              />
+            )}
           </div>
         </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
@@ -640,19 +653,21 @@ export default function DashboardEmpresa() {
             </div>
           )}
 
-          {/* GRÁFICAS INTERACTIVAS EN EL RESUMEN ADAPTADAS AL ROL */}
+          {/* TABLERO EJECUTIVO EN RESUMEN (Gráficas + Actividad reciente sin repetir las tablas) */}
           {moduloActivo === "Resumen" && !esOperativo && (
             <VistaAnalitica
               perfil={perfil}
               listaEmpleados={listaEmpleados}
               listaTickets={listaTickets}
               listaEquipos={listaEquipos}
+              listaNotificaciones={listaNotificaciones}
               colorMarca={colorMarca}
+              cambiarModulo={(nombreModulo) => setModuloActivo(nombreModulo)}
             />
           )}
 
-          {/* VISTAS MODULARES POR DEPARTAMENTO (Sin cruce de información en Resumen) */}
-          {(moduloActivo === "Recursos Humanos" || (moduloActivo === "Resumen" && (esSuperAdmin || esRH || esOperativo))) && (
+          {/* VISTAS DE TABLAS OPERATIVAS EXCLUSIVAS EN SU PESTAÑA */}
+          {(moduloActivo === "Recursos Humanos" || (moduloActivo === "Resumen" && esOperativo)) && (
             <VistaRH
               perfil={perfil}
               tenantInfo={tenantInfo}
@@ -671,7 +686,7 @@ export default function DashboardEmpresa() {
             />
           )}
 
-          {(moduloActivo === "Equipos TI" || (moduloActivo === "Resumen" && esTI)) && (
+          {moduloActivo === "Equipos TI" && (
             <VistaTI
               perfil={perfil}
               tenantInfo={tenantInfo}
@@ -684,7 +699,7 @@ export default function DashboardEmpresa() {
             />
           )}
 
-          {(moduloActivo === "Finanzas" || (moduloActivo === "Resumen" && esFinanzas)) && (
+          {moduloActivo === "Finanzas" && (
             <VistaFinanzas
               listaNominas={listaNominas}
               listaEmpleados={listaEmpleados}

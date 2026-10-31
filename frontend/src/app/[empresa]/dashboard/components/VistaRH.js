@@ -1,4 +1,5 @@
-import { Laptop, CircleDollarSign, FileText, Download, FileSpreadsheet, Plus, Edit3, QrCode } from "lucide-react";
+import { useState } from "react";
+import { Laptop, CircleDollarSign, FileText, Download, FileSpreadsheet, Plus, Edit3, QrCode, Search } from "lucide-react";
 import {
   exportarEmpleadosExcel,
   exportarPlantillaRHPDF,
@@ -23,7 +24,8 @@ export default function VistaRH({
   abrirModalGafete,
   irANuevoTicket
 }) {
-  // Solo el Super Administrador ve salarios dentro del directorio de RH
+  const [busqueda, setBusqueda] = useState("");
+
   const mostrarSalariosEnRH = perfil.rolSistema === "Super Administrador";
   const ctxReporte = {
     listaEmpleados,
@@ -35,6 +37,18 @@ export default function VistaRH({
     empresa,
     incluirSalarios: mostrarSalariosEnRH
   };
+
+  const empleadosFiltrados = listaEmpleados.filter(emp => {
+    const q = busqueda.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      emp.numeroEmpleado?.toLowerCase().includes(q) ||
+      emp.nombreCompleto?.toLowerCase().includes(q) ||
+      emp.email?.toLowerCase().includes(q) ||
+      emp.puesto?.toLowerCase().includes(q) ||
+      emp.rol?.toLowerCase().includes(q)
+    );
+  });
 
   if (perfil.rolSistema === "Operativo") {
     return (
@@ -117,6 +131,18 @@ export default function VistaRH({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* BUSCADOR EN TIEMPO REAL */}
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar por ID, nombre, puesto..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              className="pl-9 pr-3 py-2 text-xs bg-white text-slate-900 font-medium border border-slate-300 rounded-lg focus:outline-none focus:border-slate-800 w-56"
+            />
+          </div>
+
           <button
             onClick={() => exportarEmpleadosExcel(listaEmpleados, empresa, mostrarSalariosEnRH)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
@@ -155,71 +181,79 @@ export default function VistaRH({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {listaEmpleados.map((empleado) => {
-              const avatarSrc = resolverAvatar(empleado.avatarUrl);
-              return (
-                <tr key={empleado.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center space-x-3">
-                      {avatarSrc ? (
-                        <img
-                          src={avatarSrc}
-                          alt={empleado.nombreCompleto}
-                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                          className="h-9 w-9 rounded-full object-cover border border-gray-200"
-                        />
-                      ) : (
-                        <div className="h-9 w-9 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs">{empleado.iniciales}</div>
-                      )}
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">{empleado.numeroEmpleado} - {empleado.nombreCompleto}</p>
-                        <p className="text-xs text-gray-500">{empleado.email}</p>
+            {empleadosFiltrados.length === 0 ? (
+              <tr>
+                <td colSpan={mostrarSalariosEnRH ? 7 : 6} className="px-6 py-8 text-center text-xs text-slate-400">
+                  No se encontraron colaboradores que coincidan con "{busqueda}".
+                </td>
+              </tr>
+            ) : (
+              empleadosFiltrados.map((empleado) => {
+                const avatarSrc = resolverAvatar(empleado.avatarUrl);
+                return (
+                  <tr key={empleado.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-3">
+                        {avatarSrc ? (
+                          <img
+                            src={avatarSrc}
+                            alt={empleado.nombreCompleto}
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            className="h-9 w-9 rounded-full object-cover border border-gray-200"
+                          />
+                        ) : (
+                          <div className="h-9 w-9 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-xs">{empleado.iniciales}</div>
+                        )}
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">{empleado.numeroEmpleado} - {empleado.nombreCompleto}</p>
+                          <p className="text-xs text-gray-500">{empleado.email}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-700 font-medium">{empleado.rol}</td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-medium text-gray-800">{empleado.puesto}</p>
-                    <p className="text-xs text-gray-500">{empleado.tipoContrato}</p>
-                  </td>
-                  {mostrarSalariosEnRH && (
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-800">
-                      ${Number(empleado.salarioBase).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                     </td>
-                  )}
-                  <td className="px-6 py-4 text-xs text-gray-600">
-                    {new Date(empleado.fechaIngreso).toLocaleDateString('es-MX', { dateStyle: 'medium' })}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${empleado.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                      {empleado.estado}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right text-xs font-semibold space-x-1.5 whitespace-nowrap">
-                    <button
-                      onClick={() => abrirModalGafete(empleado)}
-                      className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 inline-flex items-center gap-1 transition-colors"
-                    >
-                      <QrCode size={14} /> Gafete QR
-                    </button>
-                    <button
-                      onClick={() => descargarConstanciaLaboralPDF(empleado, ctxReporte)}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 inline-flex items-center gap-1 transition-colors"
-                    >
-                      <FileText size={14} /> Constancia
-                    </button>
-                    {["Super Administrador", "Admin de Recursos Humanos", "Analista HR"].includes(perfil.rolSistema) && (
-                      <button
-                        onClick={() => abrirModalEditarEmpleado(empleado)}
-                        className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 inline-flex items-center gap-1 transition-colors"
-                      >
-                        <Edit3 size={14} /> Editar
-                      </button>
+                    <td className="px-6 py-4 text-sm text-gray-700 font-medium">{empleado.rol}</td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-medium text-gray-800">{empleado.puesto}</p>
+                      <p className="text-xs text-gray-500">{empleado.tipoContrato}</p>
+                    </td>
+                    {mostrarSalariosEnRH && (
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-800">
+                        ${Number(empleado.salarioBase).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                      </td>
                     )}
-                  </td>
-                </tr>
-              );
-            })}
+                    <td className="px-6 py-4 text-xs text-gray-600">
+                      {new Date(empleado.fechaIngreso).toLocaleDateString('es-MX', { dateStyle: 'medium' })}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${empleado.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                        {empleado.estado}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right text-xs font-semibold space-x-1.5 whitespace-nowrap">
+                      <button
+                        onClick={() => abrirModalGafete(empleado)}
+                        className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 inline-flex items-center gap-1 transition-colors"
+                      >
+                        <QrCode size={14} /> Gafete QR
+                      </button>
+                      <button
+                        onClick={() => descargarConstanciaLaboralPDF(empleado, ctxReporte)}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 inline-flex items-center gap-1 transition-colors"
+                      >
+                        <FileText size={14} /> Constancia
+                      </button>
+                      {["Super Administrador", "Admin de Recursos Humanos", "Analista HR"].includes(perfil.rolSistema) && (
+                        <button
+                          onClick={() => abrirModalEditarEmpleado(empleado)}
+                          className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 inline-flex items-center gap-1 transition-colors"
+                        >
+                          <Edit3 size={14} /> Editar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

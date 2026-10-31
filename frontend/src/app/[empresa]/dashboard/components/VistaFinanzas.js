@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileSpreadsheet, Plus, Download, DollarSign, Check, Receipt } from "lucide-react";
+import { FileSpreadsheet, Plus, Download, DollarSign, Check, Receipt, Search } from "lucide-react";
 import { exportarNominasExcel, descargarReciboNominaPDF, exportarEmpleadosExcel } from "../utils/reporteador";
 
 export default function VistaFinanzas({
@@ -12,7 +12,8 @@ export default function VistaFinanzas({
   abrirModalNomina,
   actualizarSalarioTabulador
 }) {
-  const [subVista, setSubVista] = useState("NOMINAS"); // "NOMINAS" | "TABULADOR"
+  const [subVista, setSubVista] = useState("NOMINAS");
+  const [busqueda, setBusqueda] = useState("");
   const [editandoId, setEditandoId] = useState(null);
   const [nuevoSueldo, setNuevoSueldo] = useState("");
 
@@ -25,6 +26,23 @@ export default function VistaFinanzas({
     setNuevoSueldo("");
   };
 
+  const q = busqueda.toLowerCase().trim();
+  const nominasFiltradas = listaNominas.filter(nom => {
+    if (!q) return true;
+    const nombre = `${nom.user?.numeroEmpleado || ""} ${nom.user?.firstName || ""} ${nom.user?.lastName || ""} ${nom.user?.email || ""}`.toLowerCase();
+    return nombre.includes(q);
+  });
+
+  const tabuladorFiltrado = listaEmpleados.filter(emp => {
+    if (!q) return true;
+    return (
+      emp.numeroEmpleado?.toLowerCase().includes(q) ||
+      emp.nombreCompleto?.toLowerCase().includes(q) ||
+      emp.puesto?.toLowerCase().includes(q) ||
+      emp.email?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="px-6 py-5 border-b border-gray-200 flex flex-wrap gap-4 justify-between items-center bg-gray-50/50">
@@ -34,7 +52,17 @@ export default function VistaFinanzas({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Selector de Pestaña Financiera */}
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar empleado o ID..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              className="pl-9 pr-3 py-2 text-xs bg-white text-slate-900 font-medium border border-slate-300 rounded-lg focus:outline-none focus:border-slate-800 w-52"
+            />
+          </div>
+
           <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1">
             <button
               onClick={() => setSubVista("NOMINAS")}
@@ -74,12 +102,11 @@ export default function VistaFinanzas({
             onClick={abrirModalNomina}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
           >
-            <Plus size={15} /> Dispersar Nómina (Lote / Individual)
+            <Plus size={15} /> Dispersar Nómina
           </button>
         </div>
       </div>
 
-      {/* SUB-VISTA 1: HISTORIAL DE NÓMINAS DISPERSADAS */}
       {subVista === "NOMINAS" && (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -93,7 +120,7 @@ export default function VistaFinanzas({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {listaNominas.map((nom) => (
+              {nominasFiltradas.map((nom) => (
                 <tr key={nom.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <p className="text-sm font-bold text-gray-900">{nom.user?.numeroEmpleado} - {nom.user?.firstName} {nom.user?.lastName}</p>
@@ -125,7 +152,6 @@ export default function VistaFinanzas({
         </div>
       )}
 
-      {/* SUB-VISTA 2: TABULADOR SALARIAL (ASIGNACIÓN DE SUELDOS POR FINANZAS) */}
       {subVista === "TABULADOR" && (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -139,7 +165,7 @@ export default function VistaFinanzas({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {listaEmpleados.map((emp) => (
+              {tabuladorFiltrado.map((emp) => (
                 <tr key={emp.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <p className="text-sm font-bold text-gray-900">{emp.numeroEmpleado} - {emp.nombreCompleto}</p>

@@ -30,7 +30,7 @@ const upload = multer({
 });
 
 // ==========================================
-// MIDDLEWARES Y HELPER DE AUDITORÍA
+// MIDDLEWARES Y HELPER DE AUDITORÍA (Caja Negra)
 // ==========================================
 app.use(cors()); 
 app.use(express.json({ limit: '5mb' })); 
@@ -164,7 +164,8 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
         name: tenant?.name || 'Corporativo',
         subdomain: tenant?.subdomain || '',
         emailDomain: tenant?.emailDomain || 'corporativo.com',
-        themeColor: tenant?.themeColor || '#2563eb'
+        themeColor: tenant?.themeColor || '#2563eb',
+        logoUrl: tenant?.logoUrl || null
       },
       usuario: { 
         userId: req.user.userId,
@@ -204,7 +205,6 @@ app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), asyn
       ? String(parseInt(ultimoUsuario.numeroEmpleado, 10) + 1)
       : String(Math.floor(100000 + Math.random() * 900000));
 
-    // Si lo crea RH sin especificar salario, inicia en 0 hasta que Finanzas asigne tabulador
     const sueldoInicial = (req.user.rolSistema === 'Super Administrador' && salarioBase)
       ? parseFloat(salarioBase)
       : 0.00;
@@ -350,10 +350,6 @@ app.put('/api/it/equipos/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
   const { status, assignedToId } = req.body;
   try {
-    // Validación cruzada estricta:
-    // - Si el estado pasa a Disponible o En Reparación, se desvincula el empleado.
-    // - Si se asigna un empleado, el estado es Asignado.
-    // - Si se quita el empleado y decía Asignado, pasa a Disponible.
     let estadoFinal = status;
     let empleadoFinal = assignedToId || null;
 
@@ -485,7 +481,7 @@ app.post('/api/finanzas/nominas', verificarToken, async (req, res) => {
 
 // Dispersión Masiva en Lote (Con Bonos y Descuentos)
 app.post('/api/finanzas/nominas/lote', verificarToken, async (req, res) => {
-  const { pagos } = req.body; // Array de { userId, numeroEmpleado, salarioBase, bono, descuento, amountNet }
+  const { pagos } = req.body;
   if (!Array.isArray(pagos) || pagos.length === 0) {
     return res.status(400).json({ error: "Selecciona al menos un empleado para dispersar nómina." });
   }
@@ -540,7 +536,7 @@ app.post('/api/finanzas/nominas/lote', verificarToken, async (req, res) => {
 });
 
 // ==========================================
-// 4. MÓDULO HELPDESK TRANSVERSAL (Con Candado de Asignación y Anti Auto-Atención)
+// 4. MÓDULO HELPDESK TRANSVERSAL
 // ==========================================
 app.get('/api/tickets', verificarToken, async (req, res) => {
   try {
@@ -597,12 +593,10 @@ app.put('/api/tickets/:id', verificarToken, async (req, res) => {
     const esSuperAdmin = req.user.rolSistema === 'Super Administrador';
     const esAdminArea = ['Admin de IT', 'Admin de Recursos Humanos', 'Admin de Finanzas'].includes(req.user.rolSistema);
 
-    // Regla 1: Nadie (salvo Super Admin) puede tomar ni resolver su propio ticket
     if (ticketActual.creatorId === req.user.userId && !esSuperAdmin) {
       return res.status(403).json({ error: "No puedes tomar ni resolver un ticket que tú mismo levantaste." });
     }
 
-    // Regla 2: Si el ticket ya fue tomado por alguien más, otro compañero no puede quitárselo
     if (
       ticketActual.assignedToId &&
       ticketActual.assignedToId !== req.user.userId &&
@@ -730,7 +724,7 @@ app.put('/api/perfil', verificarToken, upload.single('foto'), async (req, res) =
 });
 
 // ==========================================
-// 8. MODO DIOS (System_Admin)
+// 8. MODO DIOS (System_Admin y Gobierno Multi-Tenant con Logo PNG)
 // ==========================================
 const verificarMasterToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -823,6 +817,7 @@ app.get('/api/master/overview', verificarMasterToken, async (req, res) => {
           subdomain: t.subdomain,
           emailDomain: t.emailDomain,
           themeColor: t.themeColor || '#2563eb',
+          logoUrl: t.logoUrl || null,
           isActive: t.isActive,
           createdAt: t.createdAt,
           usuariosCount: t._count.users,
@@ -852,7 +847,7 @@ app.get('/api/master/overview', verificarMasterToken, async (req, res) => {
 });
 
 app.post('/api/master/tenants', verificarMasterToken, async (req, res) => {
-  const { name, subdomain, emailDomain, themeColor } = req.body;
+  const { name, subdomain, emailDomain, themeColor, logoUrl } = req.body;
 
   if (!name || !subdomain || !emailDomain) {
     return res.status(400).json({ error: "Nombre, subdominio y dominio de correo son obligatorios." });
@@ -880,6 +875,7 @@ app.post('/api/master/tenants', verificarMasterToken, async (req, res) => {
         subdomain: cleanSubdomain,
         emailDomain: cleanDomain,
         themeColor: themeColor || '#2563eb',
+        logoUrl: logoUrl || null,
         isActive: true
       }
     });
