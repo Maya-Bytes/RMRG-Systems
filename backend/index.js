@@ -13,25 +13,16 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 
 // ==========================================
-// CONFIGURACIÓN DE MULTER (Carga de Imágenes .PNG)
+// CONFIGURACIÓN DE MULTER EN MEMORIA (Base64 Persistente en PostgreSQL)
 // ==========================================
 const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
 if (!fs.existsSync(avatarsDir)) {
   fs.mkdirSync(avatarsDir, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, avatarsDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'avatar-' + uniqueSuffix + '.png');
-  }
-});
-
 const upload = multer({ 
-  storage: storage,
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 }, // Límite de 2MB por imagen
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'image/png') cb(null, true);
     else cb(new Error('Solo se permiten archivos .PNG'));
@@ -42,7 +33,7 @@ const upload = multer({
 // MIDDLEWARES Y HELPER DE AUDITORÍA (Caja Negra)
 // ==========================================
 app.use(cors()); 
-app.use(express.json()); 
+app.use(express.json({ limit: '5mb' })); 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const verificarToken = (req, res, next) => {
@@ -70,7 +61,7 @@ const registrarAuditoria = async (action, tableName, recordId, userId, tenantId)
 };
 
 // ==========================================
-// 0. HEALTH CHECK Y LOGIN
+// 0. HEALTH CHECK Y LOGIN CORPORATIVO
 // ==========================================
 app.get('/', (req, res) => {
   res.json({ estado: 'Online', mensaje: 'API Cloud-Native de RMRG Systems operativa ☁️' });
@@ -86,14 +77,19 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     let user;
     if (usuario.includes('@')) {
-      user = await prisma.user.findUnique({ where: { email: usuario }, include: { role: true, tenant: true, hrProfile: true } });
+      user = await prisma.user.findUnique({
+        where: { email: usuario.trim().toLowerCase() },
+        include: { role: true, tenant: true, hrProfile: true }
+      });
     } else {
-      user = await prisma.user.findUnique({ where: { numeroEmpleado: usuario }, include: { role: true, tenant: true, hrProfile: true } });
+      user = await prisma.user.findUnique({
+        where: { numeroEmpleado: usuario.trim() },
+        include: { role: true, tenant: true, hrProfile: true }
+      });
     }
 
     if (!user) return res.status(401).json({ error: "Credenciales incorrectas." });
     if (!user.isActive) return res.status(403).json({ error: "Esta cuenta ha sido desactivada por Recursos Humanos." });
-
     if (user.tenant && user.tenant.isActive === false) {
       return res.status(403).json({ error: "El servicio para este corporativo se encuentra suspendido temporalmente." });
     }
@@ -168,7 +164,7 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
       tenant: {
         name: tenant?.name || 'Corporativo',
         subdomain: tenant?.subdomain || '',
-        emailDomain: tenant?.emailDomain || 'corporativo.com', 
+        emailDomain: tenant?.emailDomain || 'corporativo.com',
         themeColor: tenant?.themeColor || '#2563eb'
       },
       usuario: { 
@@ -191,7 +187,7 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
   }
 });
 
-// Crear Empleado
+// Crear Empleado (Con foto .PNG en Base64 persistente)
 app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), async (req, res) => {
   const { nombres, apellidos, email, puesto, rol, salarioBase, tipoContrato } = req.body;
   
@@ -200,22 +196,29 @@ app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), asyn
     if (!roleDb) return res.status(400).json({ error: "Rol no válido" });
 
     const defaultPassword = await bcrypt.hash('Admin123!', 10);
-    const avatarUrlPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
-    const randomEmployeeNumber = String(Math.floor(100000 + Math.random() * 900000));
+    const avatarUrlPath = req.file
+      ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
+      : null;
+
+    // Generar un ID consecutivo o de 6 dígitos único
+    const ultimoUsuario = await prisma.user.findFirst({ orderBy: { numeroEmpleado: 'desc' } });
+    const nuevoNumeroEmpleado = ultimoUsuario
+      ? String(parseInt(ultimoUsuario.numeroEmpleado, 10) + 1)
+      : String(Math.floor(100000 + Math.random() * 900000));
 
     const nuevoUsuario = await prisma.user.create({
       data: {
-        numeroEmpleado: randomEmployeeNumber,
-        email,
+        numeroEmpleado: nuevoNumeroEmpleado,
+        email: email.trim().toLowerCase(),
         password: defaultPassword,
-        firstName: nombres,
-        lastName: apellidos,
+        firstName: nombres.trim(),
+        lastName: apellidos.trim(),
         avatarUrl: avatarUrlPath,
         tenantId: req.user.tenantId,
         roleId: roleDb.id,
         hrProfile: {
           create: {
-            position: puesto,
+            position: puesto.trim(),
             hireDate: new Date(),
             baseSalary: salarioBase ? parseFloat(salarioBase) : 15000.00,
             contractType: tipoContrato || 'Indefinido',
@@ -225,7 +228,7 @@ app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), asyn
       }
     });
 
-    await registrarAuditoria(`ALTA_EMPLEADO (${randomEmployeeNumber} - ${nombres} ${apellidos})`, 'User', nuevoUsuario.numeroEmpleado, req.user.userId, req.user.tenantId);
+    await registrarAuditoria(`ALTA_EMPLEADO (${nuevoNumeroEmpleado} - ${nombres} ${apellidos})`, 'User', nuevoUsuario.numeroEmpleado, req.user.userId, req.user.tenantId);
 
     res.status(201).json({ message: "Empleado creado con éxito", user: nuevoUsuario });
   } catch (error) {
@@ -234,7 +237,7 @@ app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), asyn
   }
 });
 
-// Editar Empleado y Baja Lógica
+// Editar Empleado y Baja Lógica (Soft Delete)
 app.put('/api/hr/empleados/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
   const { nombres, apellidos, puesto, rol, salarioBase, tipoContrato, isActive } = req.body;
@@ -246,21 +249,21 @@ app.put('/api/hr/empleados/:id', verificarToken, async (req, res) => {
     const empleadoActualizado = await prisma.user.update({
       where: { id },
       data: {
-        firstName: nombres,
-        lastName: apellidos,
+        firstName: nombres.trim(),
+        lastName: apellidos.trim(),
         roleId: roleDb.id,
         isActive: Boolean(isActive),
         hrProfile: {
           upsert: {
             create: {
-              position: puesto,
+              position: puesto.trim(),
               hireDate: new Date(),
               baseSalary: parseFloat(salarioBase),
               contractType: tipoContrato,
               tenantId: req.user.tenantId
             },
             update: {
-              position: puesto,
+              position: puesto.trim(),
               baseSalary: parseFloat(salarioBase),
               contractType: tipoContrato
             }
@@ -269,7 +272,9 @@ app.put('/api/hr/empleados/:id', verificarToken, async (req, res) => {
       }
     });
 
-    const tipoAccion = Boolean(isActive) ? `EDICION_EXPEDIENTE (${empleadoActualizado.numeroEmpleado})` : `BAJA_LOGICA_EMPLEADO (${empleadoActualizado.numeroEmpleado})`;
+    const tipoAccion = Boolean(isActive)
+      ? `EDICION_EXPEDIENTE (${empleadoActualizado.numeroEmpleado})`
+      : `BAJA_LOGICA_EMPLEADO (${empleadoActualizado.numeroEmpleado})`;
     await registrarAuditoria(tipoAccion, 'HR_Profile', empleadoActualizado.numeroEmpleado, req.user.userId, req.user.tenantId);
 
     res.json({ message: "Expediente actualizado", empleado: empleadoActualizado });
@@ -300,9 +305,9 @@ app.post('/api/it/equipos', verificarToken, async (req, res) => {
   try {
     const nuevoEquipo = await prisma.iT_Asset.create({
       data: {
-        serialNumber,
+        serialNumber: serialNumber.trim(),
         deviceType,
-        model,
+        model: model.trim(),
         status: assignedToId ? 'Asignado' : (status || 'Disponible'),
         assignedToId: assignedToId || null,
         tenantId: req.user.tenantId
@@ -314,7 +319,7 @@ app.post('/api/it/equipos', verificarToken, async (req, res) => {
     if (assignedToId) {
       await prisma.notification.create({
         data: {
-          message: `Se te ha asignado el equipo ${deviceType} ${model} (Serie: ${serialNumber}).`,
+          message: `💻 Se te ha asignado el equipo ${deviceType} ${model} (Serie: ${serialNumber}).`,
           userId: assignedToId,
           tenantId: req.user.tenantId
         }
@@ -345,7 +350,7 @@ app.put('/api/it/equipos/:id', verificarToken, async (req, res) => {
     if (assignedToId) {
       await prisma.notification.create({
         data: {
-          message: `Actualización de tu equipo ${equipo.deviceType} (${equipo.serialNumber}): Estado ${status}.`,
+          message: `💻 Actualización de tu equipo ${equipo.deviceType} (${equipo.serialNumber}): Estado ${status}.`,
           userId: assignedToId,
           tenantId: req.user.tenantId
         }
@@ -436,8 +441,8 @@ app.post('/api/tickets', verificarToken, async (req, res) => {
   try {
     const nuevoTicket = await prisma.ticket.create({
       data: {
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         targetArea,
         status: 'PENDING',
         creatorId: req.user.userId,
@@ -548,7 +553,7 @@ app.get('/api/auditoria', verificarToken, async (req, res) => {
 });
 
 // ==========================================
-// 7. CONFIGURACIÓN DE MI CUENTA (Perfil / Password)
+// 7. CONFIGURACIÓN DE MI CUENTA (Perfil Base64 / Password)
 // ==========================================
 app.put('/api/perfil', verificarToken, upload.single('foto'), async (req, res) => {
   const { nuevaPassword } = req.body;
@@ -558,7 +563,7 @@ app.put('/api/perfil', verificarToken, upload.single('foto'), async (req, res) =
       dataToUpdate.password = await bcrypt.hash(nuevaPassword, 10);
     }
     if (req.file) {
-      dataToUpdate.avatarUrl = `/uploads/avatars/${req.file.filename}`;
+      dataToUpdate.avatarUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
     }
 
     const userActualizado = await prisma.user.update({
@@ -607,7 +612,6 @@ app.post('/api/auth/master-login', async (req, res) => {
     const passValida = await bcrypt.compare(password, admin.password);
     if (!passValida) return res.status(401).json({ error: "Contraseña maestra incorrecta." });
 
-    // Limpia encabezados en caso de que suba un archivo .pem completo con BEGIN/END
     const llaveLimpia = masterKey
       .replace(/-----BEGIN.*?-----/g, '')
       .replace(/-----END.*?-----/g, '')
@@ -719,7 +723,6 @@ app.post('/api/master/tenants', verificarMasterToken, async (req, res) => {
 
     const defaultPassword = await bcrypt.hash('Admin123!', 10);
 
-    // Generar un ID de 6 dígitos consecutivo al más alto actual
     const ultimoUsuario = await prisma.user.findFirst({ orderBy: { numeroEmpleado: 'desc' } });
     const nuevoNumeroEmpleado = ultimoUsuario
       ? String(parseInt(ultimoUsuario.numeroEmpleado, 10) + 1)
