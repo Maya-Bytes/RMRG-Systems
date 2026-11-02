@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ShieldAlert, Building2, Users, Laptop, Ticket, Plus,
-  LogOut, Power, Activity, ExternalLink, X, CheckCircle2, KeyRound
+  LogOut, Power, Activity, X, CheckCircle2, UploadCloud
 } from "lucide-react";
 
 export default function MayaAdminGodDashboard() {
@@ -18,7 +18,7 @@ export default function MayaAdminGodDashboard() {
   const [tenants, setTenants] = useState([]);
   const [auditoriaGlobal, setAuditoriaGlobal] = useState([]);
 
-  // Modal para crear nueva empresa (Tenant)
+  // Modal para crear nueva empresa (Tenant) con Logo .PNG
   const [showModalTenant, setShowModalTenant] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [credencialesCreadas, setCredencialesCreadas] = useState(null);
@@ -26,7 +26,8 @@ export default function MayaAdminGodDashboard() {
     name: "",
     subdomain: "",
     emailDomain: "",
-    themeColor: "#e11d48"
+    themeColor: "#e11d48",
+    logoUrl: ""
   });
 
   const cargarConsolaMaestra = async () => {
@@ -77,6 +78,20 @@ export default function MayaAdminGodDashboard() {
     });
   };
 
+  const handleLogoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== "image/png") {
+      alert("Por favor selecciona únicamente un archivo en formato .PNG");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setFormTenant((prev) => ({ ...prev, logoUrl: String(ev.target?.result || "") }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const crearNuevoCorporativo = async (e) => {
     e.preventDefault();
     setGuardando(true);
@@ -100,7 +115,7 @@ export default function MayaAdminGodDashboard() {
       }
 
       setCredencialesCreadas(data.credencialesIniciales);
-      setFormTenant({ name: "", subdomain: "", emailDomain: "", themeColor: "#e11d48" });
+      setFormTenant({ name: "", subdomain: "", emailDomain: "", themeColor: "#e11d48", logoUrl: "" });
       cargarConsolaMaestra();
     } catch (error) {
       alert("Error al desplegar el nuevo corporativo.");
@@ -122,7 +137,6 @@ export default function MayaAdminGodDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
-      {/* HEADER DE COMANDO */}
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30 px-6 py-4 flex flex-wrap justify-between items-center gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500">
@@ -156,7 +170,6 @@ export default function MayaAdminGodDashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto p-6 space-y-8">
-        {/* MÉTRICAS GLOBALES DE LA NUBE */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl">
             <div className="flex justify-between items-center text-slate-400 text-xs font-semibold uppercase">
@@ -195,12 +208,12 @@ export default function MayaAdminGodDashboard() {
           </div>
         </div>
 
-        {/* TABLA DE CORPORATIVOS (TENANTS) */}
+        {/* TABLA DE CORPORATIVOS */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
           <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
             <div>
               <h2 className="text-base font-bold text-white">Ecosistema de Empresas (Multi-Tenant)</h2>
-              <p className="text-xs text-slate-400">Control de instancias, dominios corporativos, cuentas Super Admin y suspensión de servicio</p>
+              <p className="text-xs text-slate-400">Control de instancias, logos personalizados, dominios corporativos y estado de servicio</p>
             </div>
           </div>
 
@@ -223,7 +236,11 @@ export default function MayaAdminGodDashboard() {
                     <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <span className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: t.themeColor }} />
+                          {t.logoUrl ? (
+                            <img src={t.logoUrl} alt={t.name} className="w-8 h-8 rounded-lg object-contain bg-white p-1 border border-slate-700 shrink-0" />
+                          ) : (
+                            <span className="w-4 h-4 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: t.themeColor }} />
+                          )}
                           <div>
                             <p className="text-sm font-bold text-white">{t.name}</p>
                             <p className="text-xs font-mono text-slate-400">/{slug}/dashboard</p>
@@ -271,7 +288,7 @@ export default function MayaAdminGodDashboard() {
           </div>
         </div>
 
-        {/* AUDITORÍA TRANSVERSAL MULTI-TENANT */}
+        {/* AUDITORÍA TRANSVERSAL */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
           <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -314,7 +331,7 @@ export default function MayaAdminGodDashboard() {
         </div>
       </main>
 
-      {/* MODAL PARA DESPLEGAR NUEVO CORPORATIVO */}
+      {/* MODAL PARA DESPLEGAR NUEVO CORPORATIVO CON LOGO .PNG */}
       {showModalTenant && (
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden text-white">
@@ -399,6 +416,45 @@ export default function MayaAdminGodDashboard() {
                       onChange={(e) => setFormTenant({ ...formTenant, themeColor: e.target.value })}
                       className="w-full text-sm px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono"
                     />
+                  </div>
+                </div>
+
+                {/* ZONA DE CARGA DE LOGO .PNG EN MODO DIOS */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-slate-300">Logo Corporativo (.PNG opcional)</label>
+                    {formTenant.logoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setFormTenant({ ...formTenant, logoUrl: "" })}
+                        className="text-[11px] text-red-400 hover:underline"
+                      >
+                        Quitar logo
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative w-full h-28 rounded-xl border-2 border-dashed border-slate-700 hover:border-red-500 bg-slate-950/80 flex flex-col items-center justify-center overflow-hidden cursor-pointer transition-colors">
+                    <input
+                      type="file"
+                      accept="image/png"
+                      onChange={handleLogoUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    {formTenant.logoUrl ? (
+                      <div className="flex items-center gap-3 px-4">
+                        <img src={formTenant.logoUrl} alt="Logo preview" className="h-16 w-24 object-contain bg-white rounded-lg p-1.5" />
+                        <div className="text-left">
+                          <p className="text-xs font-bold text-emerald-400">✓ Logo .PNG cargado</p>
+                          <p className="text-[11px] text-slate-400">Se mostrará en el menú lateral del corporativo</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center p-3 flex flex-col items-center">
+                        <UploadCloud size={22} className="text-red-400 mb-1" />
+                        <p className="text-xs font-semibold text-slate-300">Haz clic o arrastra el logo en formato <span className="text-white font-mono">.PNG</span></p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Persistente en base de datos (Base64)</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
