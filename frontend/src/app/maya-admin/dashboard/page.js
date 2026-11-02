@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ShieldAlert, Building2, Users, Laptop, Ticket, Plus,
-  LogOut, Power, Activity, X, CheckCircle2, UploadCloud
+  LogOut, Power, Activity, X, CheckCircle2, UploadCloud, Edit3
 } from "lucide-react";
 
 export default function MayaAdminGodDashboard() {
@@ -18,8 +18,10 @@ export default function MayaAdminGodDashboard() {
   const [tenants, setTenants] = useState([]);
   const [auditoriaGlobal, setAuditoriaGlobal] = useState([]);
 
-  // Modal para crear nueva empresa (Tenant) con Logo .PNG
+  // Estados para Crear o Editar Empresa (Tenant) y su Logo .PNG
   const [showModalTenant, setShowModalTenant] = useState(false);
+  const [modoEdicion, setModoEdicion] = useState(false);
+  const [tenantEditandoId, setTenantEditandoId] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [credencialesCreadas, setCredencialesCreadas] = useState(null);
   const [formTenant, setFormTenant] = useState({
@@ -68,7 +70,39 @@ export default function MayaAdminGodDashboard() {
     router.replace("/");
   };
 
+  const abrirModalNuevoCorporativo = () => {
+    setModoEdicion(false);
+    setTenantEditandoId(null);
+    setCredencialesCreadas(null);
+    setFormTenant({
+      name: "",
+      subdomain: "",
+      emailDomain: "",
+      themeColor: "#e11d48",
+      logoUrl: ""
+    });
+    setShowModalTenant(true);
+  };
+
+  const abrirModalEditarCorporativo = (t) => {
+    setModoEdicion(true);
+    setTenantEditandoId(t.id);
+    setCredencialesCreadas(null);
+    setFormTenant({
+      name: t.name || "",
+      subdomain: t.subdomain || "",
+      emailDomain: t.emailDomain || "",
+      themeColor: t.themeColor || "#2563eb",
+      logoUrl: t.logoUrl || ""
+    });
+    setShowModalTenant(true);
+  };
+
   const handleNombreEmpresaChange = (nombre) => {
+    if (modoEdicion) {
+      setFormTenant({ ...formTenant, name: nombre });
+      return;
+    }
     const slug = nombre.toLowerCase().replace(/[^a-z0-9]/g, "");
     setFormTenant({
       ...formTenant,
@@ -92,12 +126,39 @@ export default function MayaAdminGodDashboard() {
     reader.readAsDataURL(file);
   };
 
-  const crearNuevoCorporativo = async (e) => {
+  const guardarCorporativo = async (e) => {
     e.preventDefault();
     setGuardando(true);
     const token = localStorage.getItem("rmrg_master_token");
 
     try {
+      if (modoEdicion && tenantEditandoId) {
+        const res = await fetch(`${API_URL}/api/master/tenants/${tenantEditandoId}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            name: formTenant.name,
+            themeColor: formTenant.themeColor,
+            logoUrl: formTenant.logoUrl
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          alert("Error: " + data.error);
+          setGuardando(false);
+          return;
+        }
+
+        setShowModalTenant(false);
+        cargarConsolaMaestra();
+        return;
+      }
+
+      // Crear nuevo corporativo
       const res = await fetch(`${API_URL}/api/master/tenants`, {
         method: "POST",
         headers: {
@@ -118,7 +179,7 @@ export default function MayaAdminGodDashboard() {
       setFormTenant({ name: "", subdomain: "", emailDomain: "", themeColor: "#e11d48", logoUrl: "" });
       cargarConsolaMaestra();
     } catch (error) {
-      alert("Error al desplegar el nuevo corporativo.");
+      alert("Error al guardar los datos del corporativo.");
     } finally {
       setGuardando(false);
     }
@@ -155,7 +216,7 @@ export default function MayaAdminGodDashboard() {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => { setCredencialesCreadas(null); setShowModalTenant(true); }}
+            onClick={abrirModalNuevoCorporativo}
             className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-lg shadow-red-600/20 transition-colors"
           >
             <Plus size={16} /> Desplegar Nuevo Corporativo
@@ -213,7 +274,7 @@ export default function MayaAdminGodDashboard() {
           <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
             <div>
               <h2 className="text-base font-bold text-white">Ecosistema de Empresas (Multi-Tenant)</h2>
-              <p className="text-xs text-slate-400">Control de instancias, logos personalizados, dominios corporativos y estado de servicio</p>
+              <p className="text-xs text-slate-400">Control de instancias, logos personalizados .PNG, dominios corporativos y estado de servicio</p>
             </div>
           </div>
 
@@ -237,9 +298,17 @@ export default function MayaAdminGodDashboard() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           {t.logoUrl ? (
-                            <img src={t.logoUrl} alt={t.name} className="w-8 h-8 rounded-lg object-contain bg-white p-1 border border-slate-700 shrink-0" />
+                            <img
+                              src={t.logoUrl}
+                              alt={t.name}
+                              className="w-9 h-9 rounded-lg object-contain bg-white p-1 border border-slate-700 shrink-0"
+                            />
                           ) : (
-                            <span className="w-4 h-4 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: t.themeColor }} />
+                            <span
+                              className="w-4 h-4 rounded-full shrink-0 border border-white/20"
+                              style={{ backgroundColor: t.themeColor }}
+                              title="Sin logo personalizado (Usando color institucional)"
+                            />
                           )}
                           <div>
                             <p className="text-sm font-bold text-white">{t.name}</p>
@@ -268,7 +337,14 @@ export default function MayaAdminGodDashboard() {
                           {t.isActive ? "Operativo" : "Suspendido"}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right space-x-2">
+                      <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap">
+                        <button
+                          onClick={() => abrirModalEditarCorporativo(t)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors"
+                          title="Subir o cambiar el logo .PNG y color de esta empresa"
+                        >
+                          <Edit3 size={13} /> Logo / Editar
+                        </button>
                         <button
                           onClick={() => alternarEstadoEmpresa(t.id)}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border transition-colors ${
@@ -331,12 +407,14 @@ export default function MayaAdminGodDashboard() {
         </div>
       </main>
 
-      {/* MODAL PARA DESPLEGAR NUEVO CORPORATIVO CON LOGO .PNG */}
+      {/* MODAL PARA CREAR O EDITAR CORPORATIVO Y SUBIR SU LOGO .PNG */}
       {showModalTenant && (
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden text-white">
             <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
-              <h3 className="text-base font-bold">Desplegar Nuevo Corporativo SaaS</h3>
+              <h3 className="text-base font-bold">
+                {modoEdicion ? "Editar Imagen (.PNG) y Color del Corporativo" : "Desplegar Nuevo Corporativo SaaS"}
+              </h3>
               <button onClick={() => setShowModalTenant(false)} className="text-slate-400 hover:text-white"><X size={20} /></button>
             </div>
 
@@ -363,7 +441,7 @@ export default function MayaAdminGodDashboard() {
                 </button>
               </div>
             ) : (
-              <form onSubmit={crearNuevoCorporativo} className="p-6 space-y-4">
+              <form onSubmit={guardarCorporativo} className="p-6 space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">Nombre Oficial de la Empresa</label>
                   <input
@@ -381,22 +459,24 @@ export default function MayaAdminGodDashboard() {
                     <label className="block text-xs font-bold text-slate-300 mb-1">Subdominio / Slug</label>
                     <input
                       required
+                      disabled={modoEdicion}
                       type="text"
                       placeholder="teslamotors"
                       value={formTenant.subdomain}
                       onChange={(e) => setFormTenant({ ...formTenant, subdomain: e.target.value })}
-                      className="w-full text-sm px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono"
+                      className="w-full text-sm px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono disabled:opacity-50"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">Dominio de Correo</label>
                     <input
                       required
+                      disabled={modoEdicion}
                       type="text"
                       placeholder="tesla.com"
                       value={formTenant.emailDomain}
                       onChange={(e) => setFormTenant({ ...formTenant, emailDomain: e.target.value })}
-                      className="w-full text-sm px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono"
+                      className="w-full text-sm px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono disabled:opacity-50"
                     />
                   </div>
                 </div>
@@ -419,17 +499,17 @@ export default function MayaAdminGodDashboard() {
                   </div>
                 </div>
 
-                {/* ZONA DE CARGA DE LOGO .PNG EN MODO DIOS */}
+                {/* ZONA DE CARGA DE LOGO .PNG */}
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-slate-300">Logo Corporativo (.PNG opcional)</label>
+                    <label className="text-xs font-bold text-slate-300">Logo Corporativo (.PNG)</label>
                     {formTenant.logoUrl && (
                       <button
                         type="button"
                         onClick={() => setFormTenant({ ...formTenant, logoUrl: "" })}
                         className="text-[11px] text-red-400 hover:underline"
                       >
-                        Quitar logo
+                        Quitar logo actual
                       </button>
                     )}
                   </div>
@@ -444,14 +524,16 @@ export default function MayaAdminGodDashboard() {
                       <div className="flex items-center gap-3 px-4">
                         <img src={formTenant.logoUrl} alt="Logo preview" className="h-16 w-24 object-contain bg-white rounded-lg p-1.5" />
                         <div className="text-left">
-                          <p className="text-xs font-bold text-emerald-400">✓ Logo .PNG cargado</p>
-                          <p className="text-[11px] text-slate-400">Se mostrará en el menú lateral del corporativo</p>
+                          <p className="text-xs font-bold text-emerald-400">✓ Logo .PNG listo</p>
+                          <p className="text-[11px] text-slate-400">Haz clic aquí si deseas reemplazarlo por otro</p>
                         </div>
                       </div>
                     ) : (
                       <div className="text-center p-3 flex flex-col items-center">
                         <UploadCloud size={22} className="text-red-400 mb-1" />
-                        <p className="text-xs font-semibold text-slate-300">Haz clic o arrastra el logo en formato <span className="text-white font-mono">.PNG</span></p>
+                        <p className="text-xs font-semibold text-slate-300">
+                          Haz clic o arrastra el logo en formato <span className="text-white font-mono">.PNG</span>
+                        </p>
                         <p className="text-[10px] text-slate-500 mt-0.5">Persistente en base de datos (Base64)</p>
                       </div>
                     )}
@@ -463,7 +545,7 @@ export default function MayaAdminGodDashboard() {
                     Cancelar
                   </button>
                   <button type="submit" disabled={guardando} className="px-5 py-2 text-sm font-semibold bg-red-600 hover:bg-red-500 text-white rounded-lg">
-                    {guardando ? "Desplegando..." : "Crear Corporativo"}
+                    {guardando ? "Guardando..." : modoEdicion ? "Guardar Cambios" : "Crear Corporativo"}
                   </button>
                 </div>
               </form>

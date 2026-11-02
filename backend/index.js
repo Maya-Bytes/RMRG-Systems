@@ -933,6 +933,27 @@ app.put('/api/master/tenants/:id/toggle', verificarMasterToken, async (req, res)
   }
 });
 
+// 8.5 Editar Corporativo Existente (Subir/Cambiar Logo .PNG, Color y Nombre)
+app.put('/api/master/tenants/:id', verificarMasterToken, async (req, res) => {
+  const { name, themeColor, logoUrl } = req.body;
+
+  try {
+    const tenantActualizado = await prisma.tenant.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name ? { name: name.trim() } : {}),
+        ...(themeColor ? { themeColor } : {}),
+        ...(logoUrl !== undefined ? { logoUrl: logoUrl || null } : {})
+      }
+    });
+
+    res.json({ message: "Corporativo actualizado con éxito", tenant: tenantActualizado });
+  } catch (error) {
+    console.error("Error al editar corporativo:", error);
+    res.status(500).json({ error: "Error al actualizar la información de la empresa" });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor backend corriendo en el puerto ${PORT}`);
 });
