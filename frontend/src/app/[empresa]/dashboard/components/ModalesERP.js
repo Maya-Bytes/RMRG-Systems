@@ -517,7 +517,7 @@ export default function ModalesERP({
         </div>
       )}
 
-      {/* MODAL 4: CREAR TICKET HELPDESK */}
+{/* MODAL 4: CREAR TICKET HELPDESK (Con Evidencia .PNG Opcional) */}
       {showModalTicket && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -542,6 +542,51 @@ export default function ModalesERP({
               <div>
                 <label className={labelStyle}>Descripción detallada</label>
                 <textarea required rows={3} placeholder="Describe el problema o requerimiento..." value={formTicket.description} onChange={e => setFormTicket({...formTicket, description: e.target.value})} className={inputStyle} />
+              </div>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-bold text-slate-700">Captura de Evidencia (.PNG opcional)</label>
+                  {formTicket.attachmentUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setFormTicket({ ...formTicket, attachmentUrl: "" })}
+                      className="text-[11px] text-red-600 font-semibold hover:underline"
+                    >
+                      Quitar captura
+                    </button>
+                  )}
+                </div>
+                <label className="w-full h-24 rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-600 bg-slate-50 flex flex-col items-center justify-center cursor-pointer transition-colors overflow-hidden">
+                  <input
+                    type="file"
+                    accept="image/png"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.type !== "image/png") {
+                        alert("Selecciona únicamente imágenes en formato .PNG");
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        setFormTicket(prev => ({ ...prev, attachmentUrl: String(ev.target?.result || "") }));
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                    className="hidden"
+                  />
+                  {formTicket.attachmentUrl ? (
+                    <div className="flex items-center gap-3 px-4">
+                      <img src={formTicket.attachmentUrl} alt="Evidencia" className="h-16 w-20 object-cover rounded border border-slate-300" />
+                      <span className="text-xs font-bold text-emerald-700">✓ Captura .PNG adjuntada</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center text-slate-500">
+                      <UploadCloud size={20} style={{ color: colorMarca }} />
+                      <span className="text-xs font-semibold mt-1">Haz clic para adjuntar captura .PNG</span>
+                    </div>
+                  )}
+                </label>
               </div>
               <div className="pt-3 flex justify-end gap-2">
                 <button type="button" onClick={() => setShowModalTicket(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>

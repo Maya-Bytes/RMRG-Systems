@@ -75,7 +75,7 @@ export default function DashboardEmpresa() {
 
   const [showModalTicket, setShowModalTicket] = useState(false);
   const [formTicket, setFormTicket] = useState({
-    title: '', description: '', targetArea: 'IT'
+    title: '', description: '', targetArea: 'IT', attachmentUrl: ''
   });
 
   const [showModalPerfil, setShowModalPerfil] = useState(false);
@@ -351,7 +351,7 @@ export default function DashboardEmpresa() {
       });
       if (res.ok) {
         setShowModalTicket(false);
-        setFormTicket({ title: '', description: '', targetArea: 'IT' });
+        setFormTicket({ title: '', description: '', targetArea: 'IT', attachmentUrl: '' });
         cargarTodo();
       }
     } finally {
@@ -359,12 +359,12 @@ export default function DashboardEmpresa() {
     }
   };
 
-  const cambiarEstadoTicket = async (id, nuevoStatus) => {
+  const cambiarEstadoTicket = async (id, nuevoStatus, motivoRechazo = "") => {
     const token = localStorage.getItem('rmrg_token');
     const res = await fetch(`${API_URL}/api/tickets/${id}`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: nuevoStatus })
+      body: JSON.stringify({ status: nuevoStatus, motivoRechazo })
     });
     if (!res.ok) {
       const err = await res.json();
@@ -394,11 +394,11 @@ export default function DashboardEmpresa() {
 
   const misEquipos = listaEquipos.filter(eq => eq.assignedToId === perfil.userId);
   const misNominas = listaNominas.filter(nom => nom.user?.id === perfil.userId || nom.userId === perfil.userId);
-  const misTicketsAbiertos = listaTickets.filter(t => t.status !== 'RESOLVED').length;
+  const misTicketsAbiertos = listaTickets.filter(t => ['PENDING', 'IN_PROGRESS'].includes(t.status)).length;
 
-  const ticketsAbiertosRH = listaTickets.filter(t => t.targetArea === "HR" && t.status !== "RESOLVED").length;
-  const ticketsAbiertosTI = listaTickets.filter(t => t.targetArea === "IT" && t.status !== "RESOLVED").length;
-  const ticketsAbiertosFin = listaTickets.filter(t => t.targetArea === "FINANCE" && t.status !== "RESOLVED").length;
+  const ticketsAbiertosRH = listaTickets.filter(t => t.targetArea === "HR" && ['PENDING', 'IN_PROGRESS'].includes(t.status)).length;
+  const ticketsAbiertosTI = listaTickets.filter(t => t.targetArea === "IT" && ['PENDING', 'IN_PROGRESS'].includes(t.status)).length;
+  const ticketsAbiertosFin = listaTickets.filter(t => t.targetArea === "FINANCE" && ['PENDING', 'IN_PROGRESS'].includes(t.status)).length;
 
   const contratosIndefinidos = listaEmpleados.filter(e => e.isActive && e.tipoContrato === "Indefinido").length;
   const equiposDisponibles = listaEquipos.filter(eq => eq.status === "Disponible").length;

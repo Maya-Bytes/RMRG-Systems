@@ -536,7 +536,7 @@ app.post('/api/finanzas/nominas/lote', verificarToken, async (req, res) => {
 });
 
 // ==========================================
-// 4. MÓDULO HELPDESK TRANSVERSAL
+// 4. MÓDULO HELPDESK TRANSVERSAL (Con Rechazo Justificado y Evidencia PNG)
 // ==========================================
 app.get('/api/tickets', verificarToken, async (req, res) => {
   try {
@@ -561,7 +561,7 @@ app.get('/api/tickets', verificarToken, async (req, res) => {
 });
 
 app.post('/api/tickets', verificarToken, async (req, res) => {
-  const { title, description, targetArea } = req.body;
+  const { title, description, targetArea, attachmentUrl } = req.body;
   try {
     const nuevoTicket = await prisma.ticket.create({
       data: {
@@ -569,6 +569,7 @@ app.post('/api/tickets', verificarToken, async (req, res) => {
         description: description.trim(),
         targetArea,
         status: 'PENDING',
+        attachmentUrl: attachmentUrl || null,
         creatorId: req.user.userId,
         tenantId: req.user.tenantId
       }
@@ -585,7 +586,7 @@ app.post('/api/tickets', verificarToken, async (req, res) => {
 
 app.put('/api/tickets/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, motivoRechazo } = req.body;
   try {
     const ticketActual = await prisma.ticket.findUnique({ where: { id } });
     if (!ticketActual) return res.status(404).json({ error: "Ticket no encontrado" });
@@ -594,7 +595,7 @@ app.put('/api/tickets/:id', verificarToken, async (req, res) => {
     const esAdminArea = ['Admin de IT', 'Admin de Recursos Humanos', 'Admin de Finanzas'].includes(req.user.rolSistema);
 
     if (ticketActual.creatorId === req.user.userId && !esSuperAdmin) {
-      return res.status(403).json({ error: "No puedes tomar ni resolver un ticket que tú mismo levantaste." });
+      return res.status(403).json({ error: "No puedes tomar, resolver ni rechazar un ticket que tú mismo levantaste." });
     }
 
     if (
@@ -606,24 +607,154 @@ app.put('/api/tickets/:id', verificarToken, async (req, res) => {
       return res.status(403).json({ error: "Este ticket ya está siendo atendido por otro especialista." });
     }
 
+    const descripcionActualizada =
+      status === 'REJECTED' && motivoRechazo
+        ? `${ticketActual.description}\n\n❌ [MOTIVO DE RECHAZO]: ${motivoRechazo.trim()}`
+        : ticketActual.description;
+
     const ticketActualizado = await prisma.ticket.update({
       where: { id },
       data: {
         status,
+        description: descripcionActualizada,
         assignedToId: req.user.userId,
-        resolvedAt: status === 'RESOLVED' ? new Date() : null
+        resolvedAt: ['RESOLVED', 'REJECTED'].includes(status) ? new Date() : null
       }
     });
 
+    const mensajeNotif =
+      status === 'REJECTED'
+        ? `❌ Tu ticket "${ticketActualizado.title}" fue RECHAZADO por ${req.user.nombre} ${req.user.apellido}.${motivoRechazo ? ` Motivo: ${motivoRechazo.trim()}` : ''}`
+        : `🛠️ Tu ticket "${ticketActualizado.title}" cambió de estado a ${status} (Atendido por ${req.user.nombre} ${req.user.apellido}).`;
+
     await prisma.notification.create({
       data: {
-        message: `🛠️ Tu ticket "${ticketActualizado.title}" cambió de estado a ${status} (Atendido por ${req.user.nombre} ${req.user.apellido}).`,
+        message: mensajeNotif,
         userId: ticketActualizado.creatorId,
         tenantId: req.user.tenantId
       }
     });
 
-    await registrarAuditoria(`CAMBIO_ESTADO_TICKET (${ticketActualizado.title} -> ${status})`, 'Ticket', id.slice(0, 8), req.user.userId, req.user.tenantId);
+    const accionLog =
+      status === 'REJECTED'
+        ? `RECHAZO_TICKET (${ticketActualizado.title}${motivoRechazo ? ` - Motivo: ${motivoRechazo.trim()}` : ''})`
+        : `CAMBIO_ESTADO_TICKET (${ticketActualizado.title} -> ${status})`;
+
+    await registrarAuditoria(accionLog, 'Ticket', id.slice(0, 8), req.user.userId, req.user.tenantId);
+
+    res.json(ticketActualizado);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al actualizar el ticket" });
+  }
+});
+
+// ==========================================
+// 4. MÓDULO HELPDESK TRANSVERSAL (Con Rechazo Justificado y Evidencia PNG)
+// ==========================================
+app.get('/api/tickets', verificarToken, async (req, res) => {
+  try {
+    const filtro = { tenantId: req.user.tenantId };
+    if (req.user.rolSistema === 'Operativo') {
+      filtro.creatorId = req.user.userId;
+    }
+
+    const tickets = await prisma.ticket.findMany({
+      where: filtro,
+      include: {
+        creator: { select: { id: true, firstName: true, lastName: true, numeroEmpleado: true, email: true } },
+        assignedTo: { select: { id: true, firstName: true, lastName: true, numeroEmpleado: true, email: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(tickets);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener los tickets" });
+  }
+});
+
+app.post('/api/tickets', verificarToken, async (req, res) => {
+  const { title, description, targetArea, attachmentUrl } = req.body;
+  try {
+    const nuevoTicket = await prisma.ticket.create({
+      data: {
+        title: title.trim(),
+        description: description.trim(),
+        targetArea,
+        status: 'PENDING',
+        attachmentUrl: attachmentUrl || null,
+        creatorId: req.user.userId,
+        tenantId: req.user.tenantId
+      }
+    });
+
+    await registrarAuditoria(`CREACION_TICKET_[${targetArea}] (${title})`, 'Ticket', nuevoTicket.id.slice(0, 8), req.user.userId, req.user.tenantId);
+
+    res.status(201).json(nuevoTicket);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al crear el ticket" });
+  }
+});
+
+app.put('/api/tickets/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { status, motivoRechazo } = req.body;
+  try {
+    const ticketActual = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticketActual) return res.status(404).json({ error: "Ticket no encontrado" });
+
+    const esSuperAdmin = req.user.rolSistema === 'Super Administrador';
+    const esAdminArea = ['Admin de IT', 'Admin de Recursos Humanos', 'Admin de Finanzas'].includes(req.user.rolSistema);
+
+    if (ticketActual.creatorId === req.user.userId && !esSuperAdmin) {
+      return res.status(403).json({ error: "No puedes tomar, resolver ni rechazar un ticket que tú mismo levantaste." });
+    }
+
+    if (
+      ticketActual.assignedToId &&
+      ticketActual.assignedToId !== req.user.userId &&
+      !esSuperAdmin &&
+      !esAdminArea
+    ) {
+      return res.status(403).json({ error: "Este ticket ya está siendo atendido por otro especialista." });
+    }
+
+    const descripcionActualizada =
+      status === 'REJECTED' && motivoRechazo
+        ? `${ticketActual.description}\n\n❌ [MOTIVO DE RECHAZO]: ${motivoRechazo.trim()}`
+        : ticketActual.description;
+
+    const ticketActualizado = await prisma.ticket.update({
+      where: { id },
+      data: {
+        status,
+        description: descripcionActualizada,
+        assignedToId: req.user.userId,
+        resolvedAt: ['RESOLVED', 'REJECTED'].includes(status) ? new Date() : null
+      }
+    });
+
+    const mensajeNotif =
+      status === 'REJECTED'
+        ? `❌ Tu ticket "${ticketActualizado.title}" fue RECHAZADO por ${req.user.nombre} ${req.user.apellido}.${motivoRechazo ? ` Motivo: ${motivoRechazo.trim()}` : ''}`
+        : `🛠️ Tu ticket "${ticketActualizado.title}" cambió de estado a ${status} (Atendido por ${req.user.nombre} ${req.user.apellido}).`;
+
+    await prisma.notification.create({
+      data: {
+        message: mensajeNotif,
+        userId: ticketActualizado.creatorId,
+        tenantId: req.user.tenantId
+      }
+    });
+
+    const accionLog =
+      status === 'REJECTED'
+        ? `RECHAZO_TICKET (${ticketActualizado.title}${motivoRechazo ? ` - Motivo: ${motivoRechazo.trim()}` : ''})`
+        : `CAMBIO_ESTADO_TICKET (${ticketActualizado.title} -> ${status})`;
+
+    await registrarAuditoria(accionLog, 'Ticket', id.slice(0, 8), req.user.userId, req.user.tenantId);
 
     res.json(ticketActualizado);
   } catch (error) {
