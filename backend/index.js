@@ -66,6 +66,28 @@ app.get('/', (req, res) => {
   res.json({ estado: 'Online', mensaje: 'API Cloud-Native de RMRG Systems operativa ☁️' });
 });
 
+app.get('/api/public/portales', async (req, res) => {
+  try {
+    const tenants = await prisma.tenant.findMany({
+      select: {
+        id: true,
+        name: true,
+        subdomain: true,
+        emailDomain: true,
+        themeColor: true,
+        logoUrl: true,
+        isActive: true,
+        _count: { select: { users: true } }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+    res.json(tenants);
+  } catch (error) {
+    console.error("Error al obtener portales públicos:", error);
+    res.status(500).json({ error: "No se pudieron cargar los portales corporativos" });
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { usuario, password } = req.body;
   
