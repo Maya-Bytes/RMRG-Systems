@@ -408,10 +408,10 @@ export default function LoginCorporativo() {
         </div>
       </main>
 
-      {/* MODAL 1: CATÁLOGO LIMPIO DE PORTALES CORPORATIVOS */}
+      {/* MODAL 1: CATÁLOGO DE PORTALES CORPORATIVOS (Ancho ampliado y dominios completos) */}
       {seccionActiva === "PORTALES" && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-sky-100 text-sky-700">
@@ -434,7 +434,7 @@ export default function LoginCorporativo() {
               </button>
             </div>
 
-            <div className="p-6 max-h-[70vh] overflow-y-auto">
+            <div className="p-6 max-h-[72vh] overflow-y-auto">
               {cargandoPortales ? (
                 <div className="py-12 text-center text-xs font-semibold text-slate-400">
                   Cargando empresas registradas...
@@ -444,13 +444,14 @@ export default function LoginCorporativo() {
                   No se encontraron empresas registradas.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {portales.map((t) => (
                     <div
                       key={t.id}
-                      className="p-4 rounded-xl border border-slate-200 hover:border-sky-300 bg-white shadow-sm hover:shadow transition-all flex items-center justify-between gap-3"
+                      className="p-4 rounded-xl border border-slate-200 hover:border-sky-300 bg-white shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-3.5"
                     >
-                      <div className="flex items-center gap-3.5 min-w-0">
+                      {/* FILA SUPERIOR: LOGO + NOMBRE COMPLETO + DOMINIO COMPLETO */}
+                      <div className="flex items-center gap-3.5">
                         {t.logoUrl ? (
                           <img
                             src={t.logoUrl}
@@ -466,33 +467,42 @@ export default function LoginCorporativo() {
                           </div>
                         )}
 
-                        <div className="min-w-0">
-                          <h4 className="text-sm font-bold text-slate-900 truncate">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-sm font-bold text-slate-900 leading-snug">
                             {t.name}
                           </h4>
-                          <p className="text-xs font-mono text-slate-500 truncate">
+                          <p className="text-xs font-mono text-slate-500 mt-0.5 break-all">
                             @{t.emailDomain}
                           </p>
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold mt-1 ${
-                              t.isActive
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-red-50 text-red-700 border border-red-200"
-                            }`}
-                          >
-                            {t.isActive ? "● Operativo" : "● Suspendido"}
-                          </span>
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        disabled={!t.isActive}
-                        onClick={() => seleccionarPortalEnLogin(t.emailDomain)}
-                        className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-xs font-bold text-sky-700 flex items-center gap-1 shrink-0 disabled:opacity-40 transition-colors"
-                      >
-                        Usar dominio <ArrowRight size={13} />
-                      </button>
+                      {/* FILA INFERIOR: ESTATUS EN UNA SOLA LÍNEA + BOTÓN USAR DOMINIO */}
+                      <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap shrink-0 ${
+                            t.isActive
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-red-50 text-red-700 border border-red-200"
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              t.isActive ? "bg-emerald-500" : "bg-red-500"
+                            }`}
+                          />
+                          {t.isActive ? "Operativo" : "Suspendido"}
+                        </span>
+
+                        <button
+                          type="button"
+                          disabled={!t.isActive}
+                          onClick={() => seleccionarPortalEnLogin(t.emailDomain)}
+                          className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-xs font-bold text-sky-700 inline-flex items-center gap-1 whitespace-nowrap shrink-0 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Usar dominio <ArrowRight size={13} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

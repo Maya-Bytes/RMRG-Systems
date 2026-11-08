@@ -10,11 +10,11 @@ const hexToRgb = (hex) => {
 };
 
 // Estampa el logo .PNG oficial de la empresa en la esquina superior derecha del PDF
-const estamparLogoCorporativo = (doc, logoUrl, x = 172, y = 4, w = 22, h = 20) => {
+const estamparLogoCorporativo = (doc, logoUrl, x = 168, y = 4.5, w = 22, h = 19) => {
   if (logoUrl && logoUrl.startsWith("data:image/png")) {
     try {
       doc.setFillColor(255, 255, 255);
-      doc.roundedRect(x - 2, y - 1, w + 4, h + 2, 2, 2, "F");
+      doc.roundedRect(x - 2, y - 1, w + 4, h + 2, 2.5, 2.5, "F");
       doc.addImage(logoUrl, "PNG", x, y, w, h);
     } catch (e) {
       console.warn("No se pudo incrustar el logo en el PDF:", e);
@@ -56,14 +56,14 @@ export const exportarPlantillaRHPDF = ({ listaEmpleados, tenantInfo, perfil, met
   doc.setFillColor(...rgb);
   doc.rect(0, 0, 297, 26, "F");
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(15);
+  doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
-  doc.text(`${tenantInfo.name.toUpperCase()} — REPORTE DE PLANTILLA CORPORATIVA`, 14, 13);
+  doc.text(`${tenantInfo.name.toUpperCase()} — REPORTE DE PLANTILLA CORPORATIVA`, 14, 12);
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  doc.text(`Generado por: ${perfil.nombre} ${perfil.apellido} (${perfil.rolSistema})   |   Fecha: ${new Date().toLocaleString('es-MX')}`, 14, 20);
+  doc.text(`Generado por: ${perfil.nombre} ${perfil.apellido} (${perfil.rolSistema})   |   Fecha: ${new Date().toLocaleString('es-MX')}`, 14, 19.5);
 
-  estamparLogoCorporativo(doc, tenantInfo?.logoUrl, 258, 3, 24, 19);
+  estamparLogoCorporativo(doc, tenantInfo?.logoUrl, 258, 3.5, 24, 19);
 
   doc.setTextColor(30, 41, 59);
   doc.setFontSize(10);
@@ -116,7 +116,7 @@ export const exportarPlantillaRHPDF = ({ listaEmpleados, tenantInfo, perfil, met
   doc.save(`Reporte_Plantilla_${empresa}.pdf`);
 };
 
-// 3. Constancia Laboral Individual en PDF (Membretada con logo .PNG)
+// 3. Constancia Laboral Individual en PDF (Membretada y con espaciado optimizado)
 export const descargarConstanciaLaboralPDF = (emp, { tenantInfo, perfil, colorMarca, dominioCorporativo, incluirSalarios = false }) => {
   const doc = new jsPDF();
   const rgb = hexToRgb(colorMarca);
@@ -124,31 +124,31 @@ export const descargarConstanciaLaboralPDF = (emp, { tenantInfo, perfil, colorMa
   const fechaIngreso = new Date(emp.fechaIngreso).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
 
   doc.setFillColor(...rgb);
-  doc.rect(0, 0, 210, 32, "F");
+  doc.rect(0, 0, 210, 30, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.text(tenantInfo.name.toUpperCase(), 20, 15);
-  doc.setFontSize(9);
+  doc.setFontSize(14.5);
+  doc.text(tenantInfo.name.toUpperCase(), 20, 14);
+  doc.setFontSize(8.5);
   doc.setFont("helvetica", "normal");
-  doc.text(`DIRECCIÓN CORPORATIVA DE RECURSOS HUMANOS  •  @${dominioCorporativo}`, 20, 23);
+  doc.text(`DIRECCIÓN CORPORATIVA DE RECURSOS HUMANOS  •  @${dominioCorporativo}`, 20, 22);
 
-  estamparLogoCorporativo(doc, tenantInfo?.logoUrl, 168, 5, 22, 21);
+  estamparLogoCorporativo(doc, tenantInfo?.logoUrl, 168, 4.5, 22, 19);
 
   doc.setTextColor(71, 85, 105);
-  doc.setFontSize(10);
-  doc.text(`Folio: RH-CONST-${emp.numeroEmpleado}-${new Date().getFullYear()}`, 125, 45);
-  doc.text(`Fecha de emisión: ${fechaHoy}`, 125, 51);
+  doc.setFontSize(9.5);
+  doc.text(`Folio: RH-CONST-${emp.numeroEmpleado}-${new Date().getFullYear()}`, 125, 42);
+  doc.text(`Fecha de emisión: ${fechaHoy}`, 125, 48);
 
   doc.setTextColor(15, 23, 42);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("A QUIEN CORRESPONDA:", 20, 70);
+  doc.setFontSize(11.5);
+  doc.text("A QUIEN CORRESPONDA:", 20, 62);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   const parrafo1 = `Por medio de la presente, la Dirección de Recursos Humanos de ${tenantInfo.name} hace constar que el(la) C. ${emp.nombreCompleto.toUpperCase()}, identificado(a) con el Número de Empleado ${emp.numeroEmpleado} y correo institucional ${emp.email}, presta sus servicios profesionales dentro de nuestra organización.`;
-  doc.text(doc.splitTextToSize(parrafo1, 170), 20, 84);
+  doc.text(doc.splitTextToSize(parrafo1, 170), 20, 73);
 
   const filasExpediente = [
     ["Nombre del Colaborador", emp.nombreCompleto],
@@ -164,29 +164,29 @@ export const descargarConstanciaLaboralPDF = (emp, { tenantInfo, perfil, colorMa
   filasExpediente.push(["Estatus Actual en el Corporativo", emp.estado.toUpperCase()]);
 
   autoTable(doc, {
-    startY: 112,
+    startY: 98,
     margin: { left: 20, right: 20 },
     head: [["Concepto del Expediente Laboral", "Información Oficial Registrada"]],
     body: filasExpediente,
     headStyles: { fillColor: rgb, textColor: [255, 255, 255], fontStyle: "bold" },
     columnStyles: { 0: { fontStyle: "bold", cellWidth: 75 } },
-    styles: { fontSize: 10, cellPadding: 4 }
+    styles: { fontSize: 9.5, cellPadding: 3.2 }
   });
 
-  const finalY = (doc.lastAutoTable?.finalY || 185) + 16;
+  const finalY = (doc.lastAutoTable?.finalY || 172) + 12;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.5);
+  doc.setFontSize(10);
   const parrafo2 = `Se extiende la presente constancia laboral a petición del interesado(a) para los fines legales o administrativos que a éste(a) convengan.`;
   doc.text(doc.splitTextToSize(parrafo2, 170), 20, finalY);
 
   doc.setFont("helvetica", "bold");
-  doc.text("ATENTAMENTE", 105, finalY + 26, { align: "center" });
+  doc.text("ATENTAMENTE", 105, finalY + 20, { align: "center" });
   doc.setDrawColor(148, 163, 184);
-  doc.line(65, finalY + 46, 145, finalY + 46);
-  doc.text(`${perfil.nombre} ${perfil.apellido}`, 105, finalY + 53, { align: "center" });
+  doc.line(65, finalY + 36, 145, finalY + 36);
+  doc.text(`${perfil.nombre} ${perfil.apellido}`, 105, finalY + 42, { align: "center" });
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
-  doc.text(`${perfil.rolSistema} — ${tenantInfo.name}`, 105, finalY + 59, { align: "center" });
+  doc.setFontSize(9);
+  doc.text(`${perfil.rolSistema} — ${tenantInfo.name}`, 105, finalY + 47.5, { align: "center" });
 
   doc.setFontSize(8);
   doc.setTextColor(148, 163, 184);
@@ -195,7 +195,7 @@ export const descargarConstanciaLaboralPDF = (emp, { tenantInfo, perfil, colorMa
   doc.save(`Constancia_Laboral_${emp.numeroEmpleado}_${emp.lastName}.pdf`);
 };
 
-// 4. Recibo de Nómina en PDF (Conciliado con el Salario Base real del Tabulador)
+// 4. Recibo de Nómina en PDF (Encabezado en 2 líneas sin choque con el logo)
 export const descargarReciboNominaPDF = (nom, { tenantInfo, perfil, colorMarca }) => {
   const doc = new jsPDF();
   const rgb = hexToRgb(colorMarca);
@@ -219,12 +219,12 @@ export const descargarReciboNominaPDF = (nom, { tenantInfo, perfil, colorMarca }
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-  doc.text(`${tenantInfo.name.toUpperCase()} — COMPROBANTE DE NÓMINA`, 18, 14);
+  doc.text(tenantInfo.name.toUpperCase(), 18, 13);
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  doc.text(`Folio Interno: NOM-${nom.id.slice(0, 8).toUpperCase()}   |   Fecha de Dispersión: ${new Date(nom.paymentDate).toLocaleDateString('es-MX')}`, 18, 22);
+  doc.text(`COMPROBANTE DE NÓMINA  •  Folio: NOM-${nom.id.slice(0, 8).toUpperCase()}  |  Fecha: ${new Date(nom.paymentDate).toLocaleDateString('es-MX')}`, 18, 21.5);
 
-  estamparLogoCorporativo(doc, tenantInfo?.logoUrl, 168, 4, 22, 20);
+  estamparLogoCorporativo(doc, tenantInfo?.logoUrl, 168, 4.5, 22, 19);
 
   autoTable(doc, {
     startY: 40,
@@ -314,7 +314,7 @@ export const exportarNominasExcel = (listaNominas, empresa) => {
   XLSX.writeFile(wb, `Historial_Nominas_${empresa}.xlsx`);
 };
 
-// 6. Carta Responsiva de Equipo TI en PDF (Con logo .PNG) e Inventario Excel
+// 6. Carta Responsiva de Equipo TI en PDF (Encabezado en 2 líneas para no taparse con el logo)
 export const descargarResponsivaTIPDF = (eq, { tenantInfo, colorMarca }) => {
   const doc = new jsPDF();
   const rgb = hexToRgb(colorMarca);
@@ -323,18 +323,21 @@ export const descargarResponsivaTIPDF = (eq, { tenantInfo, colorMarca }) => {
     : "SIN ASIGNAR (Resguardo en Almacén TI)";
 
   doc.setFillColor(...rgb);
-  doc.rect(0, 0, 210, 28, "F");
+  doc.rect(0, 0, 210, 30, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13.5);
-  doc.text(`${tenantInfo.name.toUpperCase()} — CARTA RESPONSIVA DE EQUIPO TI`, 18, 16);
+  doc.setFontSize(14);
+  doc.text(tenantInfo.name.toUpperCase(), 18, 13);
+  doc.setFontSize(9.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(`CARTA RESPONSIVA DE RESGUARDO DE HARDWARE TI  •  SERIE: ${eq.serialNumber}`, 18, 21.5);
 
-  estamparLogoCorporativo(doc, tenantInfo?.logoUrl, 168, 4, 22, 19);
+  estamparLogoCorporativo(doc, tenantInfo?.logoUrl, 168, 4.5, 22, 19);
 
   autoTable(doc, {
-    startY: 38,
+    startY: 40,
     margin: { left: 18, right: 18 },
-    head: [["Especificación del Activo Tecnológico", "Valor Registrado"]],
+    head: [["Especificación del Activo Tecnológico", "Valor Oficial Registrado"]],
     body: [
       ["Número de Serie Único", eq.serialNumber],
       ["Tipo de Dispositivo", eq.deviceType],
