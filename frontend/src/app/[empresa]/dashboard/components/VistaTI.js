@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileSpreadsheet, Plus, FileText, Search } from "lucide-react";
+import { FileSpreadsheet, Plus, FileText, Search, Edit3 } from "lucide-react";
 import { exportarInventarioTIExcel, descargarResponsivaTIPDF } from "../utils/reporteador";
 
 export default function VistaTI({
@@ -7,14 +7,26 @@ export default function VistaTI({
   tenantInfo,
   colorMarca,
   empresa,
-  listaEquipos,
-  listaEmpleados,
+  listaEquipos = [],
+  listaEmpleados = [],
   actualizarEquipo,
-  abrirModalEquipo
+  abrirModalNuevoEquipo,
+  abrirModalEditarEquipo,
+  abrirModalEquipo,
+  mostrarToast
 }) {
   const [busqueda, setBusqueda] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("TODOS");
+
+  const puedeGestionarTI = ["Super Administrador", "Admin de IT", "Soporte IT"].includes(perfil.rolSistema);
+
+  const notificarError = (msg) => {
+    if (mostrarToast) mostrarToast(msg, "error");
+    else alert(msg);
+  };
 
   const handleCambioEmpleado = (eq, nuevoEmpleadoId) => {
+    if (!puedeGestionarTI) return;
     if (nuevoEmpleadoId) {
       actualizarEquipo(eq.id, "Asignado", nuevoEmpleadoId);
     } else {
@@ -23,11 +35,12 @@ export default function VistaTI({
   };
 
   const handleCambioEstado = (eq, nuevoEstado) => {
+    if (!puedeGestionarTI) return;
     if (nuevoEstado === "Disponible" || nuevoEstado === "En Reparación") {
       actualizarEquipo(eq.id, nuevoEstado, null);
     } else if (nuevoEstado === "Asignado") {
       if (!eq.assignedToId) {
-        alert("Selecciona primero un empleado en la columna 'Empleado Asignado' para marcar el equipo como Asignado.");
+        notificarError("Selecciona primero un colaborador en la columna 'Empleado Asignado'");
         return;
       }
       actualizarEquipo(eq.id, "Asignado", eq.assignedToId);
@@ -35,9 +48,12 @@ export default function VistaTI({
   };
 
   const equiposFiltrados = listaEquipos.filter(eq => {
+    if (filtroEstado !== "TODOS" && eq.status !== filtroEstado) return false;
     const q = busqueda.toLowerCase().trim();
     if (!q) return true;
-    const responsable = eq.assignedTo ? `${eq.assignedTo.numeroEmpleado} ${eq.assignedTo.firstName} ${eq.assignedTo.lastName}`.toLowerCase() : "";
+    const responsable = eq.assignedTo
+      ? `${eq.assignedTo.numeroEmpleado} ${eq.assignedTo.firstName} ${eq.assignedTo.lastName}`.toLowerCase()
+      : "";
     return (
       eq.serialNumber?.toLowerCase().includes(q) ||
       eq.deviceType?.toLowerCase().includes(q) ||
@@ -52,7 +68,7 @@ export default function VistaTI({
       <div className="px-6 py-5 border-b border-gray-200 flex flex-wrap gap-3 justify-between items-center bg-gray-50/50">
         <div>
           <h3 className="text-lg font-semibold text-gray-800">Inventario de Hardware y Activos TI</h3>
-          <p className="text-xs text-gray-500">Control de laptops, números de serie, asignación validada y cartas responsivas en PDF</p>
+          <p className="text-xs text-gray-500">Control de laptops, números de serie, asignación validada y cartas responsivas membretadas en PDF</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -62,21 +78,33 @@ export default function VistaTI({
               placeholder="Buscar serie, modelo, usuario..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              className="pl-9 pr-3 py-2 text-xs bg-white text-slate-900 font-medium border border-slate-300 rounded-lg focus:outline-none focus:border-slate-800 w-56"
+              className="pl-9 pr-3 py-2 text-xs bg-white text-slate-900 font-medium border border-slate-300 rounded-lg focus:outline-none focus:border-slate-800 w-52"
             />
           </div>
 
+          <select
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+            className="text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-900 font-semibold"
+          >
+            <option value="TODOS">Todos los estados ({listaEquipos.length})</option>
+            <option value="Asignado">Asignados</option>
+            <option value="Disponible">Disponibles en almacén</option>
+            <option value="En Reparación">En Reparación</option>
+          </select>
+
           <button
             onClick={() => exportarInventarioTIExcel(listaEquipos, empresa)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm"
           >
-            <FileSpreadsheet size={15} /> Exportar Inventario (.xlsx)
+            <FileSpreadsheet size={15} /> Exportar (.xlsx)
           </button>
-          {["Super Administrador", "Admin de IT", "Soporte IT"].includes(perfil.rolSistema) && (
+
+          {puedeGestionarTI && (
             <button
-              onClick={abrirModalEquipo}
+              onClick={abrirModalNuevoEquipo || abrirModalEquipo}
               style={{ backgroundColor: colorMarca }}
-              className="text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+              className="text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm hover:opacity-95"
             >
               <Plus size={15} /> Registrar Equipo
             </button>
@@ -92,26 +120,32 @@ export default function VistaTI({
               <th className="px-6 py-4 font-semibold">Tipo / Modelo</th>
               <th className="px-6 py-4 font-semibold">Empleado Asignado</th>
               <th className="px-6 py-4 font-semibold">Estado</th>
-              <th className="px-6 py-4 font-semibold text-right">Resguardo</th>
+              <th className="px-6 py-4 font-semibold text-right">Herramientas TI</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {equiposFiltrados.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-6 py-8 text-center text-xs text-slate-400">
-                  No se encontraron activos de TI que coincidan con "{busqueda}".
+                  No se encontraron activos de TI que coincidan con los filtros seleccionados.
                 </td>
               </tr>
             ) : (
               equiposFiltrados.map((eq) => (
-                <tr key={eq.id} className="hover:bg-gray-50">
+                <tr key={eq.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 text-sm font-mono font-bold text-gray-900">{eq.serialNumber}</td>
-                  <td className="px-6 py-4 text-sm text-gray-700">{eq.deviceType} - <span className="font-semibold">{eq.model}</span></td>
+                  <td className="px-6 py-4 text-sm text-gray-700">
+                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-bold mr-1.5">
+                      {eq.deviceType}
+                    </span>
+                    <span className="font-semibold text-slate-900">{eq.model}</span>
+                  </td>
                   <td className="px-6 py-4 text-sm">
                     <select
+                      disabled={!puedeGestionarTI}
                       value={eq.assignedToId || ""}
                       onChange={(e) => handleCambioEmpleado(eq, e.target.value)}
-                      className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-900 font-medium"
+                      className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-900 font-medium disabled:bg-slate-100 disabled:text-slate-500"
                     >
                       <option value="">-- Sin asignar (En almacén) --</option>
                       {listaEmpleados.filter(e => e.isActive).map(emp => (
@@ -121,9 +155,10 @@ export default function VistaTI({
                   </td>
                   <td className="px-6 py-4">
                     <select
+                      disabled={!puedeGestionarTI}
                       value={eq.status}
                       onChange={(e) => handleCambioEstado(eq, e.target.value)}
-                      className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-full border disabled:opacity-75 ${
                         eq.status === 'Asignado' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                         eq.status === 'Disponible' ? 'bg-green-50 text-green-700 border-green-200' :
                         'bg-amber-50 text-amber-700 border-amber-200'
@@ -134,13 +169,21 @@ export default function VistaTI({
                       <option value="En Reparación" className="text-slate-900 bg-white">En Reparación</option>
                     </select>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-4 text-right space-x-1.5 whitespace-nowrap">
                     <button
                       onClick={() => descargarResponsivaTIPDF(eq, { tenantInfo, colorMarca })}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold inline-flex items-center gap-1"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold inline-flex items-center gap-1 transition-colors"
                     >
                       <FileText size={14} /> Responsiva PDF
                     </button>
+                    {puedeGestionarTI && abrirModalEditarEquipo && (
+                      <button
+                        onClick={() => abrirModalEditarEquipo(eq)}
+                        className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold inline-flex items-center gap-1 transition-colors"
+                      >
+                        <Edit3 size={14} /> Editar
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))

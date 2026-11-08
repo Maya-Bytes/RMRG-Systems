@@ -18,6 +18,7 @@ export default function ModalesERP({
   dominioCorporativo,
   guardando,
   listaEmpleados = [],
+  mostrarToast,
   // Modal Perfil
   showModalPerfil, setShowModalPerfil, guardarMiPerfil, nuevaPassword, setNuevaPassword,
   fotoPerfilPreview, setFotoPerfilFile, setFotoPerfilPreview,
@@ -27,7 +28,7 @@ export default function ModalesERP({
   emailPrefijo, setEmailPrefijo, setEmailUsuarioEditadoManual, generarPrefijoSugerido,
   fotoFile, setFotoFile, fotoPreview, setFotoPreview, handleImageChange,
   // Modal Equipo TI
-  showModalEquipo, setShowModalEquipo, formEquipo, setFormEquipo, guardarEquipo,
+  showModalEquipo, setShowModalEquipo, modoEdicionEquipo, formEquipo, setFormEquipo, guardarEquipo,
   // Modal Nómina Masiva
   showModalNomina, setShowModalNomina, guardarNominaLote,
   // Modal Ticket
@@ -38,6 +39,11 @@ export default function ModalesERP({
 
   const esSuperAdmin = perfil?.rolSistema === "Super Administrador";
   const puedeDarBaja = ["Super Administrador", "Admin de Recursos Humanos"].includes(perfil?.rolSistema);
+
+  const notificarAlerta = (msg) => {
+    if (mostrarToast) mostrarToast(msg, "error");
+    else alert(msg);
+  };
 
   // Estado local para la tabla interactiva de Dispersión Masiva de Nómina
   const [filasNomina, setFilasNomina] = useState([]);
@@ -84,7 +90,7 @@ export default function ModalesERP({
   const submitNominaMasiva = (e) => {
     e.preventDefault();
     if (seleccionados.length === 0) {
-      alert("Marca al menos un empleado en la tabla para emitir su pago.");
+      notificarAlerta("Marca al menos un empleado en la tabla para emitir su pago.");
       return;
     }
     const payloadPagos = seleccionados.map(f => ({
@@ -157,7 +163,7 @@ export default function ModalesERP({
         </div>
       )}
 
-      {/* MODAL 1: ALTA / EDICIÓN DE EMPLEADO (RH asigna puesto/contrato; Finanzas asigna salario) */}
+      {/* MODAL 1: ALTA / EDICIÓN DE EMPLEADO (Permite subir foto .PNG tanto en alta como en edición) */}
       {showModalEmpleado && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
@@ -291,60 +297,64 @@ export default function ModalesERP({
                 </div>
               )}
 
-              {modoEdicionEmpleado ? (
-                puedeDarBaja && (
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <label className="inline-flex items-center gap-2.5 text-sm font-bold text-slate-800 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formEmpleado.isActive}
-                        onChange={e => setFormEmpleado({...formEmpleado, isActive: e.target.checked})}
-                        className="w-4 h-4 rounded text-blue-600"
-                      />
-                      Empleado Activo en la Empresa (Desmarcar para aplicar Baja Lógica)
-                    </label>
-                  </div>
-                )
-              ) : (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-700">Fotografía del Empleado (Formato .PNG opcional)</label>
-                    {fotoPreview && (
-                      <button
-                        type="button"
-                        onClick={() => { setFotoFile(null); setFotoPreview(null); }}
-                        className="text-xs font-semibold text-red-600 hover:underline"
-                      >
-                        Quitar imagen
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative group w-full h-36 rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-700 bg-slate-50/70 hover:bg-slate-100/70 transition-all flex flex-col items-center justify-center overflow-hidden cursor-pointer">
+              {/* ZONA DE FOTOGRAFÍA .PNG (Habilitada tanto al crear como al editar empleado) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-700">
+                    Fotografía del Colaborador (Formato .PNG opcional)
+                  </label>
+                  {fotoPreview && (
+                    <button
+                      type="button"
+                      onClick={() => { setFotoFile(null); setFotoPreview(null); }}
+                      className="text-xs font-semibold text-red-600 hover:underline"
+                    >
+                      Quitar vista previa
+                    </button>
+                  )}
+                </div>
+                <div className="relative group w-full h-32 rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-700 bg-slate-50/70 hover:bg-slate-100/70 transition-all flex flex-col items-center justify-center overflow-hidden cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/png"
+                    onChange={(e) => handleImageChange(e, setFotoFile, setFotoPreview)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  {fotoPreview ? (
+                    <div className="flex items-center gap-4 px-6">
+                      <img src={fotoPreview} alt="Preview" className="w-20 h-20 rounded-full object-cover border-2 border-white shadow-md" />
+                      <div className="text-left">
+                        <p className="text-xs font-bold text-emerald-700">✓ Fotografía .PNG seleccionada</p>
+                        <p className="text-[11px] text-slate-500">Haz clic sobre el recuadro si deseas cambiarla</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center p-4 flex flex-col items-center">
+                      <div className="bg-white p-2.5 rounded-full shadow-sm mb-1.5 border border-slate-200" style={{ color: colorMarca }}>
+                        <UploadCloud size={22} />
+                      </div>
+                      <p className="text-xs font-bold text-slate-700">
+                        Haz clic aquí o arrastra la foto en formato <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-900 font-mono">.PNG</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {modoEdicionEmpleado && puedeDarBaja && (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                  <label className="inline-flex items-center gap-2.5 text-sm font-bold text-slate-800 cursor-pointer">
                     <input
-                      type="file"
-                      accept="image/png"
-                      onChange={(e) => handleImageChange(e, setFotoFile, setFotoPreview)}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      type="checkbox"
+                      checked={formEmpleado.isActive}
+                      onChange={e => setFormEmpleado({...formEmpleado, isActive: e.target.checked})}
+                      className="w-4 h-4 rounded text-blue-600"
                     />
-                    {fotoPreview ? (
-                      <div className="flex items-center gap-4 px-6">
-                        <img src={fotoPreview} alt="Preview" className="w-24 h-24 rounded-full object-cover border-2 border-white shadow-md" />
-                        <div className="text-left">
-                          <p className="text-xs font-bold text-emerald-700">✓ Imagen .PNG lista para subir</p>
-                          <p className="text-xs text-slate-600 truncate max-w-[220px]">{fotoFile?.name}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center p-4 flex flex-col items-center">
-                        <div className="bg-white p-3 rounded-full shadow-sm mb-2 border border-slate-200" style={{ color: colorMarca }}>
-                          <UploadCloud size={24} />
-                        </div>
-                        <p className="text-xs font-bold text-slate-700">
-                          Haz clic aquí o arrastra la foto en formato <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-900 font-mono">.PNG</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                    Empleado Activo en la Empresa (Desmarcar para aplicar Baja Lógica)
+                  </label>
+                  <p className="text-[11px] text-slate-500 pl-6">
+                    Al dar de baja a un colaborador, cualquier equipo de cómputo asignado a su nombre regresará automáticamente a estado <strong>Disponible</strong> en almacén TI.
+                  </p>
                 </div>
               )}
 
@@ -361,12 +371,14 @@ export default function ModalesERP({
         </div>
       )}
 
-      {/* MODAL 2: REGISTRAR EQUIPO TI */}
+      {/* MODAL 2: REGISTRAR O EDITAR EQUIPO TI */}
       {showModalEquipo && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-              <h3 className="text-lg font-bold text-slate-900">Registrar Nuevo Equipo TI</h3>
+              <h3 className="text-lg font-bold text-slate-900">
+                {modoEdicionEquipo ? "Editar Activo de Hardware TI" : "Registrar Nuevo Equipo TI"}
+              </h3>
               <button onClick={() => setShowModalEquipo(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <form onSubmit={guardarEquipo} className="p-6 space-y-4">
@@ -398,14 +410,16 @@ export default function ModalesERP({
               </div>
               <div className="pt-3 flex justify-end gap-2">
                 <button type="button" onClick={() => setShowModalEquipo(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
-                <button type="submit" disabled={guardando} style={{ backgroundColor: colorMarca }} className="px-4 py-2 text-sm font-semibold text-white rounded-lg">Guardar Equipo</button>
+                <button type="submit" disabled={guardando} style={{ backgroundColor: colorMarca }} className="px-4 py-2 text-sm font-semibold text-white rounded-lg">
+                  {guardando ? "Guardando..." : modoEdicionEquipo ? "Guardar Cambios" : "Guardar Equipo"}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL 3: CONSOLA DINÁMICA DE DISPERSIÓN DE NÓMINA (INDIVIDUAL O MASIVA CON BONOS Y DESCUENTOS) */}
+      {/* MODAL 3: CONSOLA DINÁMICA DE DISPERSIÓN DE NÓMINA */}
       {showModalNomina && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -517,7 +531,7 @@ export default function ModalesERP({
         </div>
       )}
 
-{/* MODAL 4: CREAR TICKET HELPDESK (Con Evidencia .PNG Opcional) */}
+      {/* MODAL 4: CREAR TICKET HELPDESK (Con Evidencia .PNG Opcional) */}
       {showModalTicket && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -564,7 +578,7 @@ export default function ModalesERP({
                       const file = e.target.files?.[0];
                       if (!file) return;
                       if (file.type !== "image/png") {
-                        alert("Selecciona únicamente imágenes en formato .PNG");
+                        notificarAlerta("Selecciona únicamente imágenes en formato .PNG");
                         return;
                       }
                       const reader = new FileReader();
