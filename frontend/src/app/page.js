@@ -5,7 +5,7 @@ import Image from "next/image";
 import {
   Clock, Building2, LifeBuoy, BookOpen, Info, X,
   Mail, Send, Copy, Check, ShieldCheck, Server,
-  Database, Lock, Users, ArrowRight, Globe, Sparkles
+  Database, Lock, ArrowRight, Sparkles, ShieldAlert, KeyRound
 } from "lucide-react";
 
 const LOGOS_LOCALES = {
@@ -15,22 +15,29 @@ const LOGOS_LOCALES = {
   amazonwebservices: "/assets/images/amazonwebservices.png"
 };
 
+const CORREO_MAESTRO = "juanmaya400@gmail.com";
+
 export default function LoginCorporativo() {
   const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
-  // Estados del Login
+  // Estados del Login (Empleados y Modo Dios)
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
+  const [masterKey, setMasterKey] = useState("");
+  const [nombreArchivoPem, setNombreArchivoPem] = useState("");
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
 
-  // Reloj sincronizado con diseño acorde al logo RMRG Systems
+  // Detecta automáticamente si el correo ingresado es el del System Owner (Modo Dios)
+  const esModoDios = usuario.trim().toLowerCase() === CORREO_MAESTRO;
+
+  // Reloj limpio combinado con el color del logo RMRG Systems
   const [horaActual, setHoraActual] = useState("--:--:--");
   const [fechaActual, setFechaActual] = useState("");
 
   // Navegación de las 4 secciones superiores
-  const [seccionActiva, setSeccionActiva] = useState(null); // 'PORTALES' | 'SOPORTE' | 'DIRECTORIO' | 'ACERCA'
+  const [seccionActiva, setSeccionActiva] = useState(null);
   const [portales, setPortales] = useState([]);
   const [cargandoPortales, setCargandoPortales] = useState(false);
 
@@ -89,12 +96,55 @@ export default function LoginCorporativo() {
     }
   };
 
+  // Lectura del archivo criptográfico .pem para Modo Dios
+  const handlePemUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setNombreArchivoPem(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setMasterKey(String(ev.target?.result || ""));
+    };
+    reader.readAsText(file);
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setCargando(true);
 
     try {
+      // 1. FLUJO DE AUTENTICACIÓN MAESTRA (MODO DIOS)
+      if (esModoDios) {
+        if (!masterKey.trim()) {
+          setError("Por favor carga tu archivo de Llave Maestra (.pem) para entrar al Modo Dios.");
+          setCargando(false);
+          return;
+        }
+
+        const resMaster = await fetch(`${API_URL}/api/auth/master-login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: usuario.trim().toLowerCase(),
+            password,
+            masterKey
+          })
+        });
+
+        const dataMaster = await resMaster.json();
+        if (!resMaster.ok) {
+          setError(dataMaster.error || "Credenciales maestras o llave .pem inválidas.");
+          setCargando(false);
+          return;
+        }
+
+        localStorage.setItem("rmrg_master_token", dataMaster.token);
+        router.push("/maya-admin/dashboard");
+        return;
+      }
+
+      // 2. FLUJO DE AUTENTICACIÓN CORPORATIVA NORMAL (EMPLEADOS / ADMINS)
       const res = await fetch(`${API_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,7 +163,7 @@ export default function LoginCorporativo() {
       const slugEmpresa = data.tenant.toLowerCase().replace(/[^a-z0-9]/g, "");
       router.push(`/${slugEmpresa}/dashboard`);
     } catch (err) {
-      setError("No se pudo conectar con el servidor Cloud de RMRG Systems.");
+      setError("No se pudo conectar con el servidor de RMRG Systems.");
       setCargando(false);
     }
   };
@@ -221,58 +271,59 @@ export default function LoginCorporativo() {
           </nav>
         </div>
 
-        {/* NUEVO WIDGET DE RELOJ + TELEMETRÍA CLOUD COMBINADO CON EL LOGO */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 pl-3 pr-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-50/90 via-white to-indigo-50/60 border border-sky-200/80 shadow-sm">
-            {/* Indicador Cloud Online */}
-            <div className="hidden sm:flex items-center gap-1.5 pr-2.5 border-r border-sky-200/80">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+        {/* RELOJ CORPORATIVO LIMPIO (Sin Cloud Sync) */}
+        <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-sky-50/70 border border-sky-200/80 shadow-sm">
+          <div className="p-1 rounded-lg bg-sky-500/10 text-sky-600">
+            <Clock size={14} />
+          </div>
+          <div className="flex items-baseline gap-2">
+            {fechaActual && (
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 hidden sm:inline">
+                {fechaActual}
               </span>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-sky-700">
-                Cloud Sync
-              </span>
-            </div>
-
-            {/* Fecha + Hora Estilizada */}
-            <div className="flex items-center gap-2">
-              <div className="p-1 rounded-lg bg-sky-500/10 text-sky-600">
-                <Clock size={14} />
-              </div>
-              <div className="flex items-baseline gap-2">
-                {fechaActual && (
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 hidden md:inline">
-                    {fechaActual}
-                  </span>
-                )}
-                <span className="font-mono text-xs font-bold text-slate-800 tracking-wider bg-white px-2 py-0.5 rounded-md border border-sky-100 shadow-[inset_0_1px_2px_rgba(14,165,233,0.08)]">
-                  {horaActual}
-                </span>
-              </div>
-            </div>
+            )}
+            <span className="font-mono text-xs font-bold text-slate-800 tracking-wider bg-white px-2.5 py-0.5 rounded-md border border-sky-100">
+              {horaActual}
+            </span>
           </div>
         </div>
       </header>
 
       {/* TARJETA CENTRAL DE LOGIN */}
       <main className="flex-1 flex items-center justify-center p-6">
-        <div className="bg-white w-full max-w-[420px] rounded-3xl shadow-[0_12px_40px_rgba(15,23,42,0.06)] border border-slate-100 p-8 sm:p-10">
+        <div
+          className={`bg-white w-full max-w-[420px] rounded-3xl shadow-[0_12px_40px_rgba(15,23,42,0.06)] border p-8 sm:p-10 transition-all ${
+            esModoDios ? "border-red-200 ring-2 ring-red-500/10" : "border-slate-100"
+          }`}
+        >
           <div className="flex flex-col items-center text-center mb-7">
-            <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-center mb-4 shadow-sm">
-              <Image
-                src="/assets/images/logo-rmg.png"
-                alt="Logo RMRG"
-                width={38}
-                height={38}
-                className="object-contain"
-              />
+            <div
+              className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-sm border ${
+                esModoDios
+                  ? "bg-red-50 border-red-200 text-red-600"
+                  : "bg-slate-50 border-slate-200/80"
+              }`}
+            >
+              {esModoDios ? (
+                <ShieldAlert size={34} />
+              ) : (
+                <Image
+                  src="/assets/images/logo-rmg.png"
+                  alt="Logo RMRG"
+                  width={38}
+                  height={38}
+                  className="object-contain"
+                />
+              )}
             </div>
+
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-              Acceso Corporativo
+              {esModoDios ? "Consola Maestra // Modo Dios" : "Acceso Corporativo"}
             </h1>
             <p className="text-xs text-slate-500 mt-2 leading-relaxed max-w-xs">
-              Ingresa con tu ID de 6 dígitos o correo. El sistema detectará automáticamente tu empresa.
+              {esModoDios
+                ? "Cuenta Root detectada. Adjunta tu llave criptográfica (.pem) para desbloquear el gobierno global."
+                : "Ingresa con tu ID de 6 dígitos o correo. El sistema detectará automáticamente tu empresa."}
             </p>
           </div>
 
@@ -311,18 +362,67 @@ export default function LoginCorporativo() {
               />
             </div>
 
+            {/* CARGADOR DE LLAVE CRIPTOGRÁFICA (.PEM) EXCLUSIVO PARA MODO DIOS */}
+            {esModoDios && (
+              <div className="p-4 rounded-2xl bg-red-50/60 border border-red-200 space-y-2.5 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-red-800 flex items-center gap-1.5">
+                    <KeyRound size={14} /> Llave Maestra Criptográfica (.pem)
+                  </span>
+                  {masterKey && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMasterKey("");
+                        setNombreArchivoPem("");
+                      }}
+                      className="text-[11px] font-bold text-red-600 hover:underline"
+                    >
+                      Quitar llave
+                    </button>
+                  )}
+                </div>
+
+                <label className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-red-300 hover:border-red-500 bg-white flex flex-col items-center justify-center cursor-pointer transition-colors text-center">
+                  <input
+                    type="file"
+                    accept=".pem,.key,.txt"
+                    onChange={handlePemUpload}
+                    className="hidden"
+                  />
+                  {masterKey ? (
+                    <span className="text-xs font-bold text-emerald-700">
+                      ✓ Firma cargada: {nombreArchivoPem || "master.pem"}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-slate-600">
+                      Haz clic para seleccionar tu archivo <strong className="text-red-700">.pem</strong>
+                    </span>
+                  )}
+                </label>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={cargando}
-              className="w-full py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold shadow-md hover:shadow-lg transition-all disabled:opacity-60 cursor-pointer"
+              className={`w-full py-3.5 rounded-xl text-white text-sm font-bold shadow-md hover:shadow-lg transition-all disabled:opacity-60 cursor-pointer ${
+                esModoDios
+                  ? "bg-red-600 hover:bg-red-500"
+                  : "bg-slate-900 hover:bg-slate-800"
+              }`}
             >
-              {cargando ? "Verificando credenciales..." : "Entrar al sistema"}
+              {cargando
+                ? "Verificando credenciales..."
+                : esModoDios
+                  ? "Desbloquear Modo Dios"
+                  : "Entrar al sistema"}
             </button>
           </form>
         </div>
       </main>
 
-      {/* MODAL 1: CATÁLOGO EN VIVO DE PORTALES (TENANTS) */}
+      {/* MODAL 1: CATÁLOGO LIMPIO DE PORTALES CORPORATIVOS */}
       {seccionActiva === "PORTALES" && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden">
@@ -333,10 +433,10 @@ export default function LoginCorporativo() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    Ecosistema de Portales Corporativos (Multi-Tenant)
+                    Empresas y Portales Corporativos
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Instancias empresariales desplegadas y conectadas en RMRG Systems Cloud
+                    Selecciona tu organización para autocompletar tu dominio de acceso
                   </p>
                 </div>
               </div>
@@ -351,11 +451,11 @@ export default function LoginCorporativo() {
             <div className="p-6 max-h-[70vh] overflow-y-auto">
               {cargandoPortales ? (
                 <div className="py-12 text-center text-xs font-semibold text-slate-400">
-                  Consultando instancias corporativas en Neon PostgreSQL...
+                  Cargando empresas registradas...
                 </div>
               ) : portales.length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-400">
-                  No se encontraron portales registrados.
+                  No se encontraron empresas registradas.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -367,9 +467,9 @@ export default function LoginCorporativo() {
                     return (
                       <div
                         key={t.id}
-                        className="p-4 rounded-xl border border-slate-200 hover:border-sky-300 bg-white shadow-sm hover:shadow transition-all flex flex-col justify-between gap-3"
+                        className="p-4 rounded-xl border border-slate-200 hover:border-sky-300 bg-white shadow-sm hover:shadow transition-all flex items-center justify-between gap-3"
                       >
-                        <div className="flex items-center gap-3.5">
+                        <div className="flex items-center gap-3.5 min-w-0">
                           {logoMostrar ? (
                             <img
                               src={logoMostrar}
@@ -385,45 +485,33 @@ export default function LoginCorporativo() {
                             </div>
                           )}
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-sm font-bold text-slate-900 truncate">
-                                {t.name}
-                              </h4>
-                            </div>
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-bold text-slate-900 truncate">
+                              {t.name}
+                            </h4>
                             <p className="text-xs font-mono text-slate-500 truncate">
                               @{t.emailDomain}
                             </p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  t.isActive
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                    : "bg-red-50 text-red-700 border border-red-200"
-                                }`}
-                              >
-                                {t.isActive ? "● Operativo" : "● Suspendido"}
-                              </span>
-                              <span className="text-[11px] text-slate-400 font-medium">
-                                {t._count?.users || 0} usuarios
-                              </span>
-                            </div>
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold mt-1 ${
+                                t.isActive
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-red-50 text-red-700 border border-red-200"
+                              }`}
+                            >
+                              {t.isActive ? "● Operativo" : "● Suspendido"}
+                            </span>
                           </div>
                         </div>
 
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                          <span className="text-[11px] font-mono text-slate-400">
-                            /{slug}/dashboard
-                          </span>
-                          <button
-                            type="button"
-                            disabled={!t.isActive}
-                            onClick={() => seleccionarPortalEnLogin(t.emailDomain)}
-                            className="text-xs font-bold text-sky-600 hover:text-sky-800 flex items-center gap-1 disabled:opacity-40"
-                          >
-                            Usar dominio <ArrowRight size={13} />
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          disabled={!t.isActive}
+                          onClick={() => seleccionarPortalEnLogin(t.emailDomain)}
+                          className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-xs font-bold text-sky-700 flex items-center gap-1 shrink-0 disabled:opacity-40 transition-colors"
+                        >
+                          Usar dominio <ArrowRight size={13} />
+                        </button>
                       </div>
                     );
                   })}
@@ -431,11 +519,10 @@ export default function LoginCorporativo() {
               )}
             </div>
 
-            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
-              <span>Enrutamiento dinámico inteligente por ID o dominio corporativo</span>
+            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end">
               <button
                 onClick={() => setSeccionActiva(null)}
-                className="px-4 py-1.5 rounded-lg bg-slate-900 text-white font-semibold hover:bg-slate-800"
+                className="px-4 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800"
               >
                 Cerrar
               </button>
@@ -594,7 +681,7 @@ export default function LoginCorporativo() {
                     Directorio Organizacional y Estructura de Roles ERP
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Distribución de silos departamentales y niveles de autorización por empresa
+                    Distribución de módulos departamentales dentro de cada empresa
                   </p>
                 </div>
               </div>
@@ -610,19 +697,19 @@ export default function LoginCorporativo() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60">
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
-                    Nivel 1 • Gobierno Corporativo
+                    Nivel 1 • Dirección
                   </span>
                   <h4 className="text-sm font-bold text-slate-900 mt-2">
                     Dirección General (Super Admin)
                   </h4>
                   <p className="text-xs text-slate-600 mt-1">
-                    Supervisión transversal de todos los módulos, bitácora de Caja Negra (Audit_Log) y analítica global de la empresa.
+                    Supervisión transversal de todos los módulos, bitácora de auditoría y métricas globales de la empresa.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60">
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                    Silo Capital Humano
+                    Capital Humano
                   </span>
                   <h4 className="text-sm font-bold text-slate-900 mt-2">
                     Recursos Humanos (Admin RH / Analista)
@@ -634,25 +721,25 @@ export default function LoginCorporativo() {
 
                 <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60">
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-800">
-                    Silo Infraestructura
+                    Infraestructura
                   </span>
                   <h4 className="text-sm font-bold text-slate-900 mt-2">
                     Sistemas y Hardware (Admin IT / Soporte)
                   </h4>
                   <p className="text-xs text-slate-600 mt-1">
-                    Control de inventario tecnológico por número de serie, asignación validada de equipos, cartas responsivas y Helpdesk TI.
+                    Control de inventario tecnológico por número de serie, asignación de equipos, cartas responsivas y Helpdesk TI.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60">
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                    Silo Contable y Nómina
+                    Contabilidad y Nómina
                   </span>
                   <h4 className="text-sm font-bold text-slate-900 mt-2">
                     Finanzas (Admin Finanzas / Contador)
                   </h4>
                   <p className="text-xs text-slate-600 mt-1">
-                    Administración exclusiva del Tabulador Salarial, dispersión masiva de nómina con bonos/descuentos y timbrado de recibos PDF.
+                    Administración del Tabulador Salarial, dispersión de nómina con bonos/descuentos y recibos en PDF.
                   </p>
                 </div>
               </div>
@@ -663,14 +750,14 @@ export default function LoginCorporativo() {
                     Formato de Identificación Estándar
                   </p>
                   <p className="text-xs text-slate-300 mt-0.5">
-                    Cada colaborador cuenta con un ID único de 6 dígitos (ej. <span className="font-mono text-white font-bold">100001</span>) o correo corporativo.
+                    Cada colaborador ingresa con su ID único de 6 dígitos (ej. <span className="font-mono text-white font-bold">100001</span>) o su correo corporativo.
                   </p>
                 </div>
                 <button
                   onClick={() => setSeccionActiva("SOPORTE")}
                   className="px-3.5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shrink-0"
                 >
-                  Contactar Administrador
+                  Contactar Soporte
                 </button>
               </div>
             </div>
@@ -706,7 +793,7 @@ export default function LoginCorporativo() {
 
             <div className="p-6 space-y-4 text-xs text-slate-600 leading-relaxed">
               <p className="text-slate-800 font-medium text-sm">
-                <strong>RMRG Systems</strong> es un ecosistema ERP en la nube diseñado bajo arquitectura <strong>Multi-Tenant con aislamiento por silos departamentales</strong>, garantizando que cada corporativo opere con su propia identidad visual, dominio y reglas de seguridad.
+                <strong>RMRG Systems</strong> es un ecosistema ERP en la nube diseñado bajo arquitectura <strong>Multi-Tenant con aislamiento por departamentos</strong>, garantizando que cada corporativo opere con su propia identidad visual, dominio y reglas de seguridad.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -735,7 +822,7 @@ export default function LoginCorporativo() {
                   <div>
                     <p className="font-bold text-slate-900">Caja Negra Audit_Log</p>
                     <p className="text-[11px] text-slate-500">
-                      Trazabilidad forense de inicios de sesión, dispersión de nómina y movimientos.
+                      Trazabilidad de inicios de sesión, dispersión de nómina y movimientos.
                     </p>
                   </div>
                 </div>
