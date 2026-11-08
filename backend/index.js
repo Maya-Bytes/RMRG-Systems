@@ -1,8 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
 const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
@@ -13,40 +11,43 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 
 // ==========================================
-// CONFIGURACIÓN DE MULTER EN MEMORIA (Base64 Persistente)
+// CONFIGURACIÓN DE MULTER EN MEMORIA (Base64 Serverless)
 // ==========================================
-const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
-if (!fs.existsSync(avatarsDir)) {
-  fs.mkdirSync(avatarsDir, { recursive: true });
-}
-
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'image/png') cb(null, true);
-    else cb(new Error('Solo se permiten archivos .PNG'));
+    else cb(new Error('Solo se permiten archivos en formato .PNG'));
   }
 });
 
 // ==========================================
-// MIDDLEWARES Y HELPER DE AUDITORÍA (Caja Negra)
+// MIDDLEWARES, RBAC Y AUDITORÍA (Caja Negra)
 // ==========================================
 app.use(cors()); 
 app.use(express.json({ limit: '5mb' })); 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const verificarToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; 
   
-  if (!token) return res.status(401).json({ error: "Acceso denegado. No hay token." });
+  if (!token) return res.status(401).json({ error: "Acceso denegado. Token no proporcionado." });
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: "Token inválido o expirado." });
+    if (err) return res.status(403).json({ error: "Sesión inválida o expirada." });
     req.user = user;
     next();
   });
+};
+
+const requiereRol = (rolesPermitidos) => (req, res, next) => {
+  if (!req.user || !rolesPermitidos.includes(req.user.rolSistema)) {
+    return res.status(403).json({
+      error: "No cuentas con los permisos departamentales necesarios para ejecutar esta operación."
+    });
+  }
+  next();
 };
 
 const registrarAuditoria = async (action, tableName, recordId, userId, tenantId) => {
@@ -208,121 +209,217 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
   }
 });
 
-// Alta de Empleado (RH asigna puesto y contrato; el salario lo asigna Finanzas o Super Admin)
-app.post('/api/dashboard/empleados', verificarToken, upload.single('foto'), async (req, res) => {
-  const { nombres, apellidos, email, puesto, rol, salarioBase, tipoContrato } = req.body;
-  
-  try {
-    const roleDb = await prisma.role.findFirst({ where: { name: rol } });
-    if (!roleDb) return res.status(400).json({ error: "Rol no válido" });
+// Alta de Empleado
+app.post(
+  '/api/dashboard/empleados',
+  verificarToken,
+  requiereRol(['Super Administrador', 'Admin de Recursos Humanos']),
+  upload.single('foto'),
+  async (req, res) => {
+    const { nombres, apellidos, email, puesto, rol, salarioBase, tipoContrato } = req.body;
+    
+    try {
+      const roleDb = await prisma.role.findFirst({ where: { name: rol } });
+      if (!roleDb) return res.status(400).json({ error: "Rol no válido" });
 
-    const defaultPassword = await bcrypt.hash('Admin123!', 10);
-    const avatarUrlPath = req.file
-      ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
-      : null;
+      const defaultPassword = await bcrypt.hash('Admin123!', 10);
+      const avatarUrlPath = req.file
+        ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
+        : null;
 
-    const ultimoUsuario = await prisma.user.findFirst({ orderBy: { numeroEmpleado: 'desc' } });
-    const nuevoNumeroEmpleado = ultimoUsuario
-      ? String(parseInt(ultimoUsuario.numeroEmpleado, 10) + 1)
-      : String(Math.floor(100000 + Math.random() * 900000));
+      const ultimoUsuario = await prisma.user.findFirst({ orderBy: { numeroEmpleado: 'desc' } });
+      const nuevoNumeroEmpleado = ultimoUsuario
+        ? String(parseInt(ultimoUsuario.numeroEmpleado, 10) + 1)
+        : String(Math.floor(100000 + Math.random() * 900000));
 
-    const sueldoInicial = (req.user.rolSistema === 'Super Administrador' && salarioBase)
-      ? parseFloat(salarioBase)
-      : 0.00;
+      const sueldoInicial = (req.user.rolSistema === 'Super Administrador' && salarioBase)
+        ? parseFloat(salarioBase)
+        : 0.00;
 
-    const nuevoUsuario = await prisma.user.create({
-      data: {
-        numeroEmpleado: nuevoNumeroEmpleado,
-        email: email.trim().toLowerCase(),
-        password: defaultPassword,
-        firstName: nombres.trim(),
-        lastName: apellidos.trim(),
-        avatarUrl: avatarUrlPath,
-        tenantId: req.user.tenantId,
-        roleId: roleDb.id,
-        hrProfile: {
-          create: {
-            position: puesto.trim(),
-            hireDate: new Date(),
-            baseSalary: sueldoInicial,
-            contractType: tipoContrato || 'Indefinido',
-            tenantId: req.user.tenantId
-          }
-        }
-      }
-    });
-
-    await registrarAuditoria(`ALTA_EMPLEADO (${nuevoNumeroEmpleado} - ${nombres} ${apellidos})`, 'User', nuevoUsuario.numeroEmpleado, req.user.userId, req.user.tenantId);
-
-    res.status(201).json({ message: "Empleado creado con éxito", user: nuevoUsuario });
-  } catch (error) {
-    console.error("Error al crear empleado:", error);
-    res.status(500).json({ error: "No se pudo registrar el empleado (verifica que el correo no esté duplicado)" });
-  }
-});
-
-// Edición de Expediente RH (Conserva el salario intacto si edita RH)
-app.put('/api/hr/empleados/:id', verificarToken, async (req, res) => {
-  const { id } = req.params;
-  const { nombres, apellidos, puesto, rol, salarioBase, tipoContrato, isActive } = req.body;
-
-  try {
-    const roleDb = await prisma.role.findFirst({ where: { name: rol } });
-    if (!roleDb) return res.status(400).json({ error: "Rol no válido" });
-
-    const puedeCambiarSalario = ['Super Administrador', 'Admin de Finanzas'].includes(req.user.rolSistema);
-    const puedeDarBaja = ['Super Administrador', 'Admin de Recursos Humanos'].includes(req.user.rolSistema);
-
-    const updateHrData = {
-      position: puesto.trim(),
-      contractType: tipoContrato
-    };
-    if (puedeCambiarSalario && salarioBase !== undefined) {
-      updateHrData.baseSalary = parseFloat(salarioBase);
-    }
-
-    const empleadoActualizado = await prisma.user.update({
-      where: { id },
-      data: {
-        firstName: nombres.trim(),
-        lastName: apellidos.trim(),
-        roleId: roleDb.id,
-        ...(puedeDarBaja && isActive !== undefined ? { isActive: Boolean(isActive) } : {}),
-        hrProfile: {
-          upsert: {
+      const nuevoUsuario = await prisma.user.create({
+        data: {
+          numeroEmpleado: nuevoNumeroEmpleado,
+          email: email.trim().toLowerCase(),
+          password: defaultPassword,
+          firstName: nombres.trim(),
+          lastName: apellidos.trim(),
+          avatarUrl: avatarUrlPath,
+          tenantId: req.user.tenantId,
+          roleId: roleDb.id,
+          hrProfile: {
             create: {
               position: puesto.trim(),
               hireDate: new Date(),
-              baseSalary: puedeCambiarSalario && salarioBase ? parseFloat(salarioBase) : 0,
-              contractType: tipoContrato,
+              baseSalary: sueldoInicial,
+              contractType: tipoContrato || 'Indefinido',
               tenantId: req.user.tenantId
-            },
-            update: updateHrData
+            }
           }
         }
-      }
-    });
+      });
 
-    const tipoAccion = Boolean(empleadoActualizado.isActive)
-      ? `EDICION_EXPEDIENTE (${empleadoActualizado.numeroEmpleado})`
-      : `BAJA_LOGICA_EMPLEADO (${empleadoActualizado.numeroEmpleado})`;
-    await registrarAuditoria(tipoAccion, 'HR_Profile', empleadoActualizado.numeroEmpleado, req.user.userId, req.user.tenantId);
+      await registrarAuditoria(
+        `ALTA_EMPLEADO (${nuevoNumeroEmpleado} - ${nombres} ${apellidos})`,
+        'User',
+        nuevoUsuario.numeroEmpleado,
+        req.user.userId,
+        req.user.tenantId
+      );
 
-    res.json({ message: "Expediente actualizado", empleado: empleadoActualizado });
-  } catch (error) {
-    console.error("Error al actualizar empleado:", error);
-    res.status(500).json({ error: "No se pudo actualizar el expediente" });
+      res.status(201).json({ message: "Empleado creado con éxito", user: nuevoUsuario });
+    } catch (error) {
+      console.error("Error al crear empleado:", error);
+      res.status(500).json({ error: "No se pudo registrar el empleado (verifica que el correo no esté duplicado)" });
+    }
   }
-});
+);
+
+// Edición de Expediente RH (Soporta actualización de foto .PNG y libera equipos TI si pasa a Baja Lógica)
+app.put(
+  '/api/hr/empleados/:id',
+  verificarToken,
+  requiereRol(['Super Administrador', 'Admin de Recursos Humanos', 'Analista HR']),
+  upload.single('foto'),
+  async (req, res) => {
+    const { id } = req.params;
+    const { nombres, apellidos, puesto, rol, salarioBase, tipoContrato, isActive } = req.body;
+
+    try {
+      const roleDb = await prisma.role.findFirst({ where: { name: rol } });
+      if (!roleDb) return res.status(400).json({ error: "Rol no válido" });
+
+      const puedeCambiarSalario = ['Super Administrador', 'Admin de Finanzas'].includes(req.user.rolSistema);
+      const puedeDarBaja = ['Super Administrador', 'Admin de Recursos Humanos'].includes(req.user.rolSistema);
+
+      const estadoActivoParsed =
+        isActive === undefined ? undefined : (isActive === true || isActive === 'true');
+
+      const updateHrData = {
+        position: puesto.trim(),
+        contractType: tipoContrato
+      };
+      if (puedeCambiarSalario && salarioBase !== undefined) {
+        updateHrData.baseSalary = parseFloat(salarioBase);
+      }
+
+      const dataUserUpdate = {
+        firstName: nombres.trim(),
+        lastName: apellidos.trim(),
+        roleId: roleDb.id,
+        ...(puedeDarBaja && estadoActivoParsed !== undefined ? { isActive: estadoActivoParsed } : {})
+      };
+
+      if (req.file) {
+        dataUserUpdate.avatarUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      }
+
+      const empleadoActualizado = await prisma.user.update({
+        where: { id },
+        data: {
+          ...dataUserUpdate,
+          hrProfile: {
+            upsert: {
+              create: {
+                position: puesto.trim(),
+                hireDate: new Date(),
+                baseSalary: puedeCambiarSalario && salarioBase ? parseFloat(salarioBase) : 0,
+                contractType: tipoContrato,
+                tenantId: req.user.tenantId
+              },
+              update: updateHrData
+            }
+          }
+        }
+      });
+
+      // Si el empleado fue dado de baja lógica, liberar automáticamente sus equipos TI
+      let equiposLiberados = 0;
+      if (puedeDarBaja && estadoActivoParsed === false) {
+        const liberacion = await prisma.iT_Asset.updateMany({
+          where: { assignedToId: id, tenantId: req.user.tenantId },
+          data: { status: 'Disponible', assignedToId: null }
+        });
+        equiposLiberados = liberacion.count;
+      }
+
+      const tipoAccion = Boolean(empleadoActualizado.isActive)
+        ? `EDICION_EXPEDIENTE (${empleadoActualizado.numeroEmpleado})`
+        : `BAJA_LOGICA_EMPLEADO (${empleadoActualizado.numeroEmpleado}${equiposLiberados > 0 ? ` - ${equiposLiberados} equipo(s) liberado(s)` : ''})`;
+
+      await registrarAuditoria(tipoAccion, 'HR_Profile', empleadoActualizado.numeroEmpleado, req.user.userId, req.user.tenantId);
+
+      res.json({
+        message: "Expediente actualizado",
+        empleado: empleadoActualizado,
+        equiposLiberados
+      });
+    } catch (error) {
+      console.error("Error al actualizar empleado:", error);
+      res.status(500).json({ error: "No se pudo actualizar el expediente" });
+    }
+  }
+);
+
+// Restablecer contraseña de un colaborador desde RH / Super Admin
+app.post(
+  '/api/hr/empleados/:id/reset-password',
+  verificarToken,
+  requiereRol(['Super Administrador', 'Admin de Recursos Humanos']),
+  async (req, res) => {
+    const { id } = req.params;
+    try {
+      const emp = await prisma.user.findFirst({
+        where: { id, tenantId: req.user.tenantId }
+      });
+      if (!emp) return res.status(404).json({ error: "Colaborador no encontrado." });
+
+      const passwordTemporal = "Admin123!";
+      const passwordHash = await bcrypt.hash(passwordTemporal, 10);
+
+      await prisma.user.update({
+        where: { id },
+        data: { password: passwordHash }
+      });
+
+      await prisma.notification.create({
+        data: {
+          message: `🔐 Tu contraseña de acceso fue restablecida por ${req.user.nombre} ${req.user.apellido} (${req.user.rolSistema}). Recuerda actualizarla desde Configuración de Cuenta.`,
+          userId: id,
+          tenantId: req.user.tenantId
+        }
+      });
+
+      await registrarAuditoria(
+        `RESET_PASSWORD_EMPLEADO (${emp.numeroEmpleado})`,
+        'User',
+        emp.numeroEmpleado,
+        req.user.userId,
+        req.user.tenantId
+      );
+
+      res.json({
+        message: "Contraseña restablecida con éxito",
+        numeroEmpleado: emp.numeroEmpleado,
+        nombreCompleto: `${emp.firstName} ${emp.lastName}`,
+        email: emp.email,
+        passwordTemporal
+      });
+    } catch (error) {
+      console.error("Error al resetear password:", error);
+      res.status(500).json({ error: "No se pudo restablecer la contraseña del colaborador." });
+    }
+  }
+);
 
 // ==========================================
-// 2. MÓDULO DE EQUIPOS TI (Validación Doble Empleado ↔ Estado)
+// 2. MÓDULO DE EQUIPOS TI (Validación Doble + Edición Completa)
 // ==========================================
 app.get('/api/it/equipos', verificarToken, async (req, res) => {
   try {
     const equipos = await prisma.iT_Asset.findMany({
       where: { tenantId: req.user.tenantId },
-      include: { assignedTo: { select: { id: true, firstName: true, lastName: true, numeroEmpleado: true, email: true } } }
+      include: { assignedTo: { select: { id: true, firstName: true, lastName: true, numeroEmpleado: true, email: true } } },
+      orderBy: { serialNumber: 'asc' }
     });
     res.json(equipos);
   } catch (error) {
@@ -331,83 +428,99 @@ app.get('/api/it/equipos', verificarToken, async (req, res) => {
   }
 });
 
-app.post('/api/it/equipos', verificarToken, async (req, res) => {
-  const { serialNumber, deviceType, model, status, assignedToId } = req.body;
-  try {
-    const estadoFinal = assignedToId ? 'Asignado' : (status === 'En Reparación' ? 'En Reparación' : 'Disponible');
-    const empleadoFinal = estadoFinal === 'Asignado' ? assignedToId : null;
+app.post(
+  '/api/it/equipos',
+  verificarToken,
+  requiereRol(['Super Administrador', 'Admin de IT', 'Soporte IT']),
+  async (req, res) => {
+    const { serialNumber, deviceType, model, status, assignedToId } = req.body;
+    try {
+      const estadoFinal = assignedToId ? 'Asignado' : (status === 'En Reparación' ? 'En Reparación' : 'Disponible');
+      const empleadoFinal = estadoFinal === 'Asignado' ? assignedToId : null;
 
-    const nuevoEquipo = await prisma.iT_Asset.create({
-      data: {
-        serialNumber: serialNumber.trim(),
-        deviceType,
-        model: model.trim(),
-        status: estadoFinal,
-        assignedToId: empleadoFinal,
-        tenantId: req.user.tenantId
-      }
-    });
-
-    await registrarAuditoria(`REGISTRO_ACTIVO_TI (${serialNumber} - ${model})`, 'IT_Asset', serialNumber, req.user.userId, req.user.tenantId);
-
-    if (empleadoFinal) {
-      await prisma.notification.create({
+      const nuevoEquipo = await prisma.iT_Asset.create({
         data: {
-          message: `💻 Se te ha asignado el equipo ${deviceType} ${model} (Serie: ${serialNumber}).`,
-          userId: empleadoFinal,
+          serialNumber: serialNumber.trim().toUpperCase(),
+          deviceType,
+          model: model.trim(),
+          status: estadoFinal,
+          assignedToId: empleadoFinal,
           tenantId: req.user.tenantId
         }
       });
-    }
 
-    res.status(201).json(nuevoEquipo);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al registrar equipo TI" });
-  }
-});
+      await registrarAuditoria(`REGISTRO_ACTIVO_TI (${nuevoEquipo.serialNumber} - ${model})`, 'IT_Asset', nuevoEquipo.serialNumber, req.user.userId, req.user.tenantId);
 
-app.put('/api/it/equipos/:id', verificarToken, async (req, res) => {
-  const { id } = req.params;
-  const { status, assignedToId } = req.body;
-  try {
-    let estadoFinal = status;
-    let empleadoFinal = assignedToId || null;
-
-    if (status === 'Disponible' || status === 'En Reparación') {
-      empleadoFinal = null;
-    } else if (empleadoFinal) {
-      estadoFinal = 'Asignado';
-    } else {
-      estadoFinal = 'Disponible';
-    }
-
-    const equipo = await prisma.iT_Asset.update({
-      where: { id },
-      data: {
-        status: estadoFinal,
-        assignedToId: empleadoFinal
+      if (empleadoFinal) {
+        await prisma.notification.create({
+          data: {
+            message: `💻 Se te ha asignado el equipo ${deviceType} ${model} (Serie: ${nuevoEquipo.serialNumber}).`,
+            userId: empleadoFinal,
+            tenantId: req.user.tenantId
+          }
+        });
       }
-    });
 
-    await registrarAuditoria(`ACTUALIZACION_ACTIVO_TI (${equipo.serialNumber} -> ${estadoFinal})`, 'IT_Asset', equipo.serialNumber, req.user.userId, req.user.tenantId);
+      res.status(201).json(nuevoEquipo);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Error al registrar equipo TI (verifica que el número de serie no esté duplicado)." });
+    }
+  }
+);
 
-    if (empleadoFinal) {
-      await prisma.notification.create({
+app.put(
+  '/api/it/equipos/:id',
+  verificarToken,
+  requiereRol(['Super Administrador', 'Admin de IT', 'Soporte IT']),
+  async (req, res) => {
+    const { id } = req.params;
+    const { serialNumber, deviceType, model, status, assignedToId } = req.body;
+    try {
+      const equipoPrevio = await prisma.iT_Asset.findUnique({ where: { id } });
+      if (!equipoPrevio) return res.status(404).json({ error: "Equipo no encontrado" });
+
+      let estadoFinal = status || equipoPrevio.status;
+      let empleadoFinal = assignedToId !== undefined ? (assignedToId || null) : equipoPrevio.assignedToId;
+
+      if (status === 'Disponible' || status === 'En Reparación') {
+        empleadoFinal = null;
+      } else if (empleadoFinal) {
+        estadoFinal = 'Asignado';
+      } else {
+        estadoFinal = 'Disponible';
+      }
+
+      const equipo = await prisma.iT_Asset.update({
+        where: { id },
         data: {
-          message: `💻 Se te ha asignado el equipo ${equipo.deviceType} ${equipo.model} (${equipo.serialNumber}).`,
-          userId: empleadoFinal,
-          tenantId: req.user.tenantId
+          ...(serialNumber ? { serialNumber: serialNumber.trim().toUpperCase() } : {}),
+          ...(deviceType ? { deviceType } : {}),
+          ...(model ? { model: model.trim() } : {}),
+          status: estadoFinal,
+          assignedToId: empleadoFinal
         }
       });
-    }
 
-    res.json(equipo);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al actualizar equipo TI" });
+      await registrarAuditoria(`ACTUALIZACION_ACTIVO_TI (${equipo.serialNumber} -> ${estadoFinal})`, 'IT_Asset', equipo.serialNumber, req.user.userId, req.user.tenantId);
+
+      if (empleadoFinal && empleadoFinal !== equipoPrevio.assignedToId) {
+        await prisma.notification.create({
+          data: {
+            message: `💻 Se te ha asignado el equipo ${equipo.deviceType} ${equipo.model} (${equipo.serialNumber}).`,
+            userId: empleadoFinal,
+            tenantId: req.user.tenantId
+          }
+        });
+      }
+
+      res.json(equipo);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Error al actualizar equipo TI" });
+    }
   }
-});
+);
 
 // ==========================================
 // 3. MÓDULO DE FINANZAS, TABULADOR SALARIAL Y NÓMINA EN LOTE
@@ -427,137 +540,112 @@ app.get('/api/finanzas/nominas', verificarToken, async (req, res) => {
 });
 
 // Actualizar Salario Base desde Finanzas (Tabulador Salarial)
-app.put('/api/finanzas/salario/:userId', verificarToken, async (req, res) => {
-  const { userId } = req.params;
-  const { salarioBase } = req.body;
+app.put(
+  '/api/finanzas/salario/:userId',
+  verificarToken,
+  requiereRol(['Super Administrador', 'Admin de Finanzas']),
+  async (req, res) => {
+    const { userId } = req.params;
+    const { salarioBase } = req.body;
 
-  if (!['Super Administrador', 'Admin de Finanzas'].includes(req.user.rolSistema)) {
-    return res.status(403).json({ error: "Solo Dirección de Finanzas o Super Admin pueden modificar el tabulador salarial." });
-  }
+    try {
+      const emp = await prisma.user.findUnique({ where: { id: userId } });
+      if (!emp) return res.status(404).json({ error: "Empleado no encontrado" });
 
-  try {
-    const emp = await prisma.user.findUnique({ where: { id: userId } });
-    if (!emp) return res.status(404).json({ error: "Empleado no encontrado" });
-
-    const perfilActualizado = await prisma.hR_Profile.upsert({
-      where: { userId },
-      create: {
-        userId,
-        position: 'Por definir',
-        hireDate: new Date(),
-        baseSalary: parseFloat(salarioBase),
-        contractType: 'Indefinido',
-        tenantId: req.user.tenantId
-      },
-      update: {
-        baseSalary: parseFloat(salarioBase)
-      }
-    });
-
-    await registrarAuditoria(
-      `AJUSTE_TABULADOR_SALARIAL (${emp.numeroEmpleado} -> $${parseFloat(salarioBase).toFixed(2)})`,
-      'HR_Profile',
-      emp.numeroEmpleado,
-      req.user.userId,
-      req.user.tenantId
-    );
-
-    res.json({ message: "Salario base actualizado", hrProfile: perfilActualizado });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al actualizar el salario base" });
-  }
-});
-
-// Dispersión Individual
-app.post('/api/finanzas/nominas', verificarToken, async (req, res) => {
-  const { userId, amountNet, status } = req.body;
-  try {
-    const nuevaNomina = await prisma.finance_Payroll.create({
-      data: {
-        userId,
-        amountNet: parseFloat(amountNet),
-        status: status || 'Pagado',
-        paymentDate: new Date(),
-        tenantId: req.user.tenantId
-      }
-    });
-
-    await prisma.notification.create({
-      data: {
-        message: `💰 Tu recibo de nómina por $${parseFloat(amountNet).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ha sido dispersado (${status || 'Pagado'}).`,
-        userId,
-        tenantId: req.user.tenantId
-      }
-    });
-
-    await registrarAuditoria(`DISPERSION_NOMINA ($${parseFloat(amountNet).toFixed(2)})`, 'Finance_Payroll', nuevaNomina.id.slice(0, 8), req.user.userId, req.user.tenantId);
-
-    res.status(201).json(nuevaNomina);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al dispersar la nómina" });
-  }
-});
-
-// Dispersión Masiva en Lote (Con Bonos y Descuentos)
-app.post('/api/finanzas/nominas/lote', verificarToken, async (req, res) => {
-  const { pagos } = req.body;
-  if (!Array.isArray(pagos) || pagos.length === 0) {
-    return res.status(400).json({ error: "Selecciona al menos un empleado para dispersar nómina." });
-  }
-
-  try {
-    const resultados = [];
-    for (const p of pagos) {
-      const montoFinal = parseFloat(p.amountNet);
-      const bonoNum = parseFloat(p.bono || 0);
-      const descNum = parseFloat(p.descuento || 0);
-
-      const nomina = await prisma.finance_Payroll.create({
-        data: {
-          userId: p.userId,
-          amountNet: montoFinal,
-          status: 'Pagado',
-          paymentDate: new Date(),
+      const perfilActualizado = await prisma.hR_Profile.upsert({
+        where: { userId },
+        create: {
+          userId,
+          position: 'Por definir',
+          hireDate: new Date(),
+          baseSalary: parseFloat(salarioBase),
+          contractType: 'Indefinido',
           tenantId: req.user.tenantId
+        },
+        update: {
+          baseSalary: parseFloat(salarioBase)
         }
       });
 
-      let detalleExtra = '';
-      if (bonoNum > 0 || descNum > 0) {
-        detalleExtra = ` [Base: $${Number(p.salarioBase).toLocaleString('es-MX')}${bonoNum > 0 ? ` + Bono: $${bonoNum}` : ''}${descNum > 0 ? ` - Desc: $${descNum}` : ''}]`;
-      }
+      await registrarAuditoria(
+        `AJUSTE_TABULADOR_SALARIAL (${emp.numeroEmpleado} -> $${parseFloat(salarioBase).toFixed(2)})`,
+        'HR_Profile',
+        emp.numeroEmpleado,
+        req.user.userId,
+        req.user.tenantId
+      );
 
-      await prisma.notification.create({
-        data: {
-          message: `💰 Tu pago de nómina por $${montoFinal.toLocaleString('es-MX', { minimumFractionDigits: 2 })} ha sido depositado.${detalleExtra}`,
-          userId: p.userId,
-          tenantId: req.user.tenantId
-        }
-      });
+      res.json({ message: "Salario base actualizado", hrProfile: perfilActualizado });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Error al actualizar el salario base" });
+    }
+  }
+);
 
-      resultados.push(nomina);
+// Dispersión en Lote o Individual (Con Bonos y Descuentos)
+app.post(
+  '/api/finanzas/nominas/lote',
+  verificarToken,
+  requiereRol(['Super Administrador', 'Admin de Finanzas', 'Contador']),
+  async (req, res) => {
+    const { pagos } = req.body;
+    if (!Array.isArray(pagos) || pagos.length === 0) {
+      return res.status(400).json({ error: "Selecciona al menos un empleado para dispersar nómina." });
     }
 
-    const sumaTotal = pagos.reduce((acc, p) => acc + parseFloat(p.amountNet || 0), 0);
-    await registrarAuditoria(
-      `DISPERSION_NOMINA_LOTE (${resultados.length} empleados - Total: $${sumaTotal.toFixed(2)})`,
-      'Finance_Payroll',
-      `LOTE-${resultados.length}`,
-      req.user.userId,
-      req.user.tenantId
-    );
+    try {
+      const resultados = [];
+      for (const p of pagos) {
+        const montoFinal = parseFloat(p.amountNet);
+        const bonoNum = parseFloat(p.bono || 0);
+        const descNum = parseFloat(p.descuento || 0);
 
-    res.status(201).json({ message: `Se dispersaron ${resultados.length} pagos con éxito`, total: resultados.length });
-  } catch (error) {
-    console.error("Error en dispersión por lote:", error);
-    res.status(500).json({ error: "Error al procesar la dispersión masiva de nómina" });
+        const nomina = await prisma.finance_Payroll.create({
+          data: {
+            userId: p.userId,
+            amountNet: montoFinal,
+            status: 'Pagado',
+            paymentDate: new Date(),
+            tenantId: req.user.tenantId
+          }
+        });
+
+        let detalleExtra = '';
+        if (bonoNum > 0 || descNum > 0) {
+          detalleExtra = ` [Base: $${Number(p.salarioBase).toLocaleString('es-MX')}${bonoNum > 0 ? ` + Bono: $${bonoNum}` : ''}${descNum > 0 ? ` - Desc: $${descNum}` : ''}]`;
+        }
+
+        await prisma.notification.create({
+          data: {
+            message: `💰 Tu pago de nómina por $${montoFinal.toLocaleString('es-MX', { minimumFractionDigits: 2 })} ha sido depositado.${detalleExtra}`,
+            userId: p.userId,
+            tenantId: req.user.tenantId
+          }
+        });
+
+        resultados.push(nomina);
+      }
+
+      const sumaTotal = pagos.reduce((acc, p) => acc + parseFloat(p.amountNet || 0), 0);
+      await registrarAuditoria(
+        `DISPERSION_NOMINA_LOTE (${resultados.length} empleados - Total: $${sumaTotal.toFixed(2)})`,
+        'Finance_Payroll',
+        `LOTE-${resultados.length}`,
+        req.user.userId,
+        req.user.tenantId
+      );
+
+      res.status(201).json({ message: `Se dispersaron ${resultados.length} pagos con éxito`, total: resultados.length });
+    } catch (error) {
+      console.error("Error en dispersión por lote:", error);
+      res.status(500).json({ error: "Error al procesar la dispersión masiva de nómina" });
+    }
   }
-});
+);
 
 // ==========================================
-// 4. MÓDULO HELPDESK TRANSVERSAL (Con Rechazo Justificado y Evidencia PNG)
+// 4. MÓDULO HELPDESK TRANSVERSAL (Con Nota de Resolución, Rechazo y Evidencia PNG)
 // ==========================================
 app.get('/api/tickets', verificarToken, async (req, res) => {
   try {
@@ -607,7 +695,7 @@ app.post('/api/tickets', verificarToken, async (req, res) => {
 
 app.put('/api/tickets/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { status, motivoRechazo } = req.body;
+  const { status, motivoRechazo, notaResolucion } = req.body;
   try {
     const ticketActual = await prisma.ticket.findUnique({ where: { id } });
     if (!ticketActual) return res.status(404).json({ error: "Ticket no encontrado" });
@@ -628,10 +716,12 @@ app.put('/api/tickets/:id', verificarToken, async (req, res) => {
       return res.status(403).json({ error: "Este ticket ya está siendo atendido por otro especialista." });
     }
 
-    const descripcionActualizada =
-      status === 'REJECTED' && motivoRechazo
-        ? `${ticketActual.description}\n\n❌ [MOTIVO DE RECHAZO]: ${motivoRechazo.trim()}`
-        : ticketActual.description;
+    let descripcionActualizada = ticketActual.description;
+    if (status === 'REJECTED' && motivoRechazo) {
+      descripcionActualizada = `${ticketActual.description}\n\n❌ [MOTIVO DE RECHAZO]: ${motivoRechazo.trim()}`;
+    } else if (status === 'RESOLVED' && notaResolucion) {
+      descripcionActualizada = `${ticketActual.description}\n\n✅ [SOLUCIÓN APLICADA]: ${notaResolucion.trim()}`;
+    }
 
     const ticketActualizado = await prisma.ticket.update({
       where: { id },
@@ -643,10 +733,12 @@ app.put('/api/tickets/:id', verificarToken, async (req, res) => {
       }
     });
 
-    const mensajeNotif =
-      status === 'REJECTED'
-        ? `❌ Tu ticket "${ticketActualizado.title}" fue RECHAZADO por ${req.user.nombre} ${req.user.apellido}.${motivoRechazo ? ` Motivo: ${motivoRechazo.trim()}` : ''}`
-        : `🛠️ Tu ticket "${ticketActualizado.title}" cambió de estado a ${status} (Atendido por ${req.user.nombre} ${req.user.apellido}).`;
+    let mensajeNotif = `🛠️ Tu ticket "${ticketActualizado.title}" está EN PROGRESO (Atendido por ${req.user.nombre} ${req.user.apellido}).`;
+    if (status === 'REJECTED') {
+      mensajeNotif = `❌ Tu ticket "${ticketActualizado.title}" fue RECHAZADO por ${req.user.nombre} ${req.user.apellido}.${motivoRechazo ? ` Motivo: ${motivoRechazo.trim()}` : ''}`;
+    } else if (status === 'RESOLVED') {
+      mensajeNotif = `✅ Tu ticket "${ticketActualizado.title}" fue RESUELTO por ${req.user.nombre} ${req.user.apellido}.${notaResolucion ? ` Solución: ${notaResolucion.trim()}` : ''}`;
+    }
 
     await prisma.notification.create({
       data: {
@@ -659,7 +751,9 @@ app.put('/api/tickets/:id', verificarToken, async (req, res) => {
     const accionLog =
       status === 'REJECTED'
         ? `RECHAZO_TICKET (${ticketActualizado.title}${motivoRechazo ? ` - Motivo: ${motivoRechazo.trim()}` : ''})`
-        : `CAMBIO_ESTADO_TICKET (${ticketActualizado.title} -> ${status})`;
+        : status === 'RESOLVED'
+          ? `RESOLUCION_TICKET (${ticketActualizado.title}${notaResolucion ? ` - Solución: ${notaResolucion.trim()}` : ''})`
+          : `TOMA_TICKET (${ticketActualizado.title} -> IN_PROGRESS)`;
 
     await registrarAuditoria(accionLog, 'Ticket', id.slice(0, 8), req.user.userId, req.user.tenantId);
 
@@ -678,7 +772,7 @@ app.get('/api/notificaciones', verificarToken, async (req, res) => {
     const notificaciones = await prisma.notification.findMany({
       where: { userId: req.user.userId, tenantId: req.user.tenantId },
       orderBy: { createdAt: 'desc' },
-      take: 20
+      take: 25
     });
     res.json(notificaciones);
   } catch (error) {
@@ -724,7 +818,7 @@ app.get('/api/auditoria', verificarToken, async (req, res) => {
         user: { select: { firstName: true, lastName: true, numeroEmpleado: true, email: true, role: true } }
       },
       orderBy: { createdAt: 'desc' },
-      take: 50
+      take: 80
     });
     res.json(logs);
   } catch (error) {
@@ -762,7 +856,7 @@ app.put('/api/perfil', verificarToken, upload.single('foto'), async (req, res) =
 });
 
 // ==========================================
-// 8. MODO DIOS (System_Admin y Gobierno Multi-Tenant con Logo PNG)
+// 8. MODO DIOS (System_Admin y Gobierno Multi-Tenant)
 // ==========================================
 const verificarMasterToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -825,7 +919,7 @@ app.get('/api/master/overview', verificarMasterToken, async (req, res) => {
           _count: { select: { users: true } },
           users: {
             where: { role: { name: 'Super Administrador' } },
-            select: { numeroEmpleado: true, email: true },
+            select: { id: true, numeroEmpleado: true, email: true },
             take: 1
           }
         },
@@ -839,7 +933,7 @@ app.get('/api/master/overview', verificarMasterToken, async (req, res) => {
           user: { select: { firstName: true, lastName: true, numeroEmpleado: true, tenant: { select: { name: true, themeColor: true } } } }
         },
         orderBy: { createdAt: 'desc' },
-        take: 30
+        take: 40
       })
     ]);
 
@@ -971,7 +1065,7 @@ app.put('/api/master/tenants/:id/toggle', verificarMasterToken, async (req, res)
   }
 });
 
-// 8.5 Editar Corporativo Existente (Subir/Cambiar Logo .PNG, Color y Nombre)
+// Editar Corporativo Existente (Logo .PNG, Color y Nombre)
 app.put('/api/master/tenants/:id', verificarMasterToken, async (req, res) => {
   const { name, themeColor, logoUrl } = req.body;
 
@@ -989,6 +1083,42 @@ app.put('/api/master/tenants/:id', verificarMasterToken, async (req, res) => {
   } catch (error) {
     console.error("Error al editar corporativo:", error);
     res.status(500).json({ error: "Error al actualizar la información de la empresa" });
+  }
+});
+
+// Resetear contraseña del Super Administrador de una empresa desde Modo Dios
+app.post('/api/master/tenants/:id/reset-superadmin', verificarMasterToken, async (req, res) => {
+  try {
+    const superAdmin = await prisma.user.findFirst({
+      where: {
+        tenantId: req.params.id,
+        role: { name: 'Super Administrador' }
+      }
+    });
+
+    if (!superAdmin) {
+      return res.status(404).json({ error: "Este corporativo no tiene una cuenta de Super Administrador asignada." });
+    }
+
+    const passwordTemporal = "Admin123!";
+    const passwordHash = await bcrypt.hash(passwordTemporal, 10);
+
+    await prisma.user.update({
+      where: { id: superAdmin.id },
+      data: { password: passwordHash, isActive: true }
+    });
+
+    res.json({
+      message: "Credenciales del Director General restablecidas",
+      credenciales: {
+        numeroEmpleado: superAdmin.numeroEmpleado,
+        email: superAdmin.email,
+        passwordTemporal
+      }
+    });
+  } catch (error) {
+    console.error("Error al resetear Super Admin:", error);
+    res.status(500).json({ error: "No se pudo restablecer la cuenta del Super Administrador." });
   }
 });
 

@@ -8,13 +8,6 @@ import {
   Database, Lock, ArrowRight, Sparkles, ShieldAlert, KeyRound
 } from "lucide-react";
 
-const LOGOS_LOCALES = {
-  thecocacolacompany: "/assets/images/thecocacolacompany.png",
-  samsungelectronics: "/assets/images/samsungelectronics.png",
-  microsoftcorporation: "/assets/images/microsoftcorporation.png",
-  amazonwebservices: "/assets/images/amazonwebservices.png"
-};
-
 const CORREO_MAESTRO = "juanmaya400@gmail.com";
 
 export default function LoginCorporativo() {
@@ -29,7 +22,6 @@ export default function LoginCorporativo() {
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
 
-  // Detecta automáticamente si el correo ingresado es el del System Owner (Modo Dios)
   const esModoDios = usuario.trim().toLowerCase() === CORREO_MAESTRO;
 
   // Reloj limpio combinado con el color del logo RMRG Systems
@@ -96,7 +88,6 @@ export default function LoginCorporativo() {
     }
   };
 
-  // Lectura del archivo criptográfico .pem para Modo Dios
   const handlePemUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -114,10 +105,9 @@ export default function LoginCorporativo() {
     setCargando(true);
 
     try {
-      // 1. FLUJO DE AUTENTICACIÓN MAESTRA (MODO DIOS)
       if (esModoDios) {
         if (!masterKey.trim()) {
-          setError("Por favor carga tu archivo de Llave Maestra (.pem) para entrar al Modo Dios.");
+          setError("Por favor adjunta tu archivo de Llave Maestra (.pem) para entrar al Modo Dios.");
           setCargando(false);
           return;
         }
@@ -144,7 +134,6 @@ export default function LoginCorporativo() {
         return;
       }
 
-      // 2. FLUJO DE AUTENTICACIÓN CORPORATIVA NORMAL (EMPLEADOS / ADMINS)
       const res = await fetch(`${API_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -199,7 +188,6 @@ export default function LoginCorporativo() {
       {/* BARRA SUPERIOR CORPORATIVA */}
       <header className="h-16 bg-white border-b border-slate-200/90 px-6 lg:px-10 flex items-center justify-between sticky top-0 z-30 shadow-[0_1px_3px_rgba(15,23,42,0.03)]">
         <div className="flex items-center gap-8">
-          {/* LOGO RMRG SYSTEMS */}
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center shadow-sm">
               <Image
@@ -215,7 +203,6 @@ export default function LoginCorporativo() {
             </span>
           </div>
 
-          {/* 4 SECCIONES INTERACTIVAS DE LA BARRA SUPERIOR */}
           <nav className="hidden md:flex items-center gap-1.5">
             <button
               type="button"
@@ -271,7 +258,7 @@ export default function LoginCorporativo() {
           </nav>
         </div>
 
-        {/* RELOJ CORPORATIVO LIMPIO (Sin Cloud Sync) */}
+        {/* RELOJ CORPORATIVO LIMPIO */}
         <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-sky-50/70 border border-sky-200/80 shadow-sm">
           <div className="p-1 rounded-lg bg-sky-500/10 text-sky-600">
             <Clock size={14} />
@@ -362,9 +349,8 @@ export default function LoginCorporativo() {
               />
             </div>
 
-            {/* CARGADOR DE LLAVE CRIPTOGRÁFICA (.PEM) EXCLUSIVO PARA MODO DIOS */}
             {esModoDios && (
-              <div className="p-4 rounded-2xl bg-red-50/60 border border-red-200 space-y-2.5 animate-fadeIn">
+              <div className="p-4 rounded-2xl bg-red-50/60 border border-red-200 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-red-800 flex items-center gap-1.5">
                     <KeyRound size={14} /> Llave Maestra Criptográfica (.pem)
@@ -459,62 +445,56 @@ export default function LoginCorporativo() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {portales.map((t) => {
-                    const slug = t.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-                    const imgFallback = LOGOS_LOCALES[slug] || null;
-                    const logoMostrar = t.logoUrl || imgFallback;
-
-                    return (
-                      <div
-                        key={t.id}
-                        className="p-4 rounded-xl border border-slate-200 hover:border-sky-300 bg-white shadow-sm hover:shadow transition-all flex items-center justify-between gap-3"
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          {logoMostrar ? (
-                            <img
-                              src={logoMostrar}
-                              alt={t.name}
-                              className="w-12 h-12 rounded-xl object-contain bg-slate-50 p-1.5 border border-slate-200 shrink-0"
-                            />
-                          ) : (
-                            <div
-                              style={{ backgroundColor: t.themeColor || "#0284c7" }}
-                              className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-extrabold text-sm shrink-0 shadow-sm"
-                            >
-                              {t.name.substring(0, 2).toUpperCase()}
-                            </div>
-                          )}
-
-                          <div className="min-w-0">
-                            <h4 className="text-sm font-bold text-slate-900 truncate">
-                              {t.name}
-                            </h4>
-                            <p className="text-xs font-mono text-slate-500 truncate">
-                              @{t.emailDomain}
-                            </p>
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold mt-1 ${
-                                t.isActive
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                  : "bg-red-50 text-red-700 border border-red-200"
-                              }`}
-                            >
-                              {t.isActive ? "● Operativo" : "● Suspendido"}
-                            </span>
+                  {portales.map((t) => (
+                    <div
+                      key={t.id}
+                      className="p-4 rounded-xl border border-slate-200 hover:border-sky-300 bg-white shadow-sm hover:shadow transition-all flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        {t.logoUrl ? (
+                          <img
+                            src={t.logoUrl}
+                            alt={t.name}
+                            className="w-12 h-12 rounded-xl object-contain bg-slate-50 p-1.5 border border-slate-200 shrink-0"
+                          />
+                        ) : (
+                          <div
+                            style={{ backgroundColor: t.themeColor || "#0284c7" }}
+                            className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-extrabold text-sm shrink-0 shadow-sm"
+                          >
+                            {t.name.substring(0, 2).toUpperCase()}
                           </div>
-                        </div>
+                        )}
 
-                        <button
-                          type="button"
-                          disabled={!t.isActive}
-                          onClick={() => seleccionarPortalEnLogin(t.emailDomain)}
-                          className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-xs font-bold text-sky-700 flex items-center gap-1 shrink-0 disabled:opacity-40 transition-colors"
-                        >
-                          Usar dominio <ArrowRight size={13} />
-                        </button>
+                        <div className="min-w-0">
+                          <h4 className="text-sm font-bold text-slate-900 truncate">
+                            {t.name}
+                          </h4>
+                          <p className="text-xs font-mono text-slate-500 truncate">
+                            @{t.emailDomain}
+                          </p>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold mt-1 ${
+                              t.isActive
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : "bg-red-50 text-red-700 border border-red-200"
+                            }`}
+                          >
+                            {t.isActive ? "● Operativo" : "● Suspendido"}
+                          </span>
+                        </div>
                       </div>
-                    );
-                  })}
+
+                      <button
+                        type="button"
+                        disabled={!t.isActive}
+                        onClick={() => seleccionarPortalEnLogin(t.emailDomain)}
+                        className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-xs font-bold text-sky-700 flex items-center gap-1 shrink-0 disabled:opacity-40 transition-colors"
+                      >
+                        Usar dominio <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -531,7 +511,7 @@ export default function LoginCorporativo() {
         </div>
       )}
 
-      {/* MODAL 2: SOPORTE TI (CONTACTO DIRECTO A juanmaya400@gmail.com) */}
+      {/* MODAL 2: SOPORTE TI */}
       {seccionActiva === "SOPORTE" && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
@@ -840,14 +820,13 @@ export default function LoginCorporativo() {
 
               <div className="pt-3 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
                 <span>Desarrollado y administrado por <strong>Carlos Maya</strong></span>
-                <span className="font-mono font-bold text-slate-700">v2.5 Production Release</span>
+                <span className="font-mono font-bold text-slate-700">v2.6 Enterprise Release</span>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* FOOTER MINIMALISTA */}
       <footer className="py-4 px-6 text-center text-[11px] text-slate-400">
         RMRG Systems Cloud ERP • Arquitectura Multi-Tenant Segura
       </footer>

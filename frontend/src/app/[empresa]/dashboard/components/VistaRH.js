@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Laptop, CircleDollarSign, FileText, Download, FileSpreadsheet, Plus, Edit3, QrCode, Search } from "lucide-react";
+import {
+  Laptop, CircleDollarSign, FileText, Download, FileSpreadsheet,
+  Plus, Edit3, QrCode, Search, KeyRound
+} from "lucide-react";
 import {
   exportarEmpleadosExcel,
   exportarPlantillaRHPDF,
@@ -22,11 +25,14 @@ export default function VistaRH({
   abrirModalNuevoEmpleado,
   abrirModalEditarEmpleado,
   abrirModalGafete,
+  resetearPasswordEmpleado,
   irANuevoTicket
 }) {
   const [busqueda, setBusqueda] = useState("");
 
   const mostrarSalariosEnRH = perfil.rolSistema === "Super Administrador";
+  const puedeResetearClave = ["Super Administrador", "Admin de Recursos Humanos"].includes(perfil.rolSistema);
+
   const ctxReporte = {
     listaEmpleados,
     tenantInfo,
@@ -131,7 +137,6 @@ export default function VistaRH({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* BUSCADOR EN TIEMPO REAL */}
           <div className="relative">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -247,6 +252,15 @@ export default function VistaRH({
                           className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 inline-flex items-center gap-1 transition-colors"
                         >
                           <Edit3 size={14} /> Editar
+                        </button>
+                      )}
+                      {puedeResetearClave && resetearPasswordEmpleado && (
+                        <button
+                          onClick={() => resetearPasswordEmpleado(empleado)}
+                          title="Restablecer contraseña temporal (Admin123!)"
+                          className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1 transition-colors"
+                        >
+                          <KeyRound size={13} /> Reset Clave
                         </button>
                       )}
                     </td>
