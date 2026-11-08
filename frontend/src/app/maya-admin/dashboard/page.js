@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ShieldAlert, Building2, Users, Laptop, Ticket, Plus,
-  LogOut, Power, Activity, X, CheckCircle2, UploadCloud, Edit3
+  LogOut, Power, Activity, X, CheckCircle2, UploadCloud,
+  Edit3, Search, KeyRound, AlertCircle
 } from "lucide-react";
 
 export default function MayaAdminGodDashboard() {
@@ -17,6 +18,14 @@ export default function MayaAdminGodDashboard() {
   });
   const [tenants, setTenants] = useState([]);
   const [auditoriaGlobal, setAuditoriaGlobal] = useState([]);
+  const [busquedaTenant, setBusquedaTenant] = useState("");
+
+  // Notificación Toast profesional (Reemplaza alert nativo)
+  const [toast, setToast] = useState(null);
+  const mostrarToast = (mensaje, tipo = "ok") => {
+    setToast({ mensaje, tipo });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   // Estados para Crear o Editar Empresa (Tenant) y su Logo .PNG
   const [showModalTenant, setShowModalTenant] = useState(false);
@@ -24,6 +33,7 @@ export default function MayaAdminGodDashboard() {
   const [tenantEditandoId, setTenantEditandoId] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [credencialesCreadas, setCredencialesCreadas] = useState(null);
+  const [credencialesReseteadas, setCredencialesReseteadas] = useState(null);
   const [formTenant, setFormTenant] = useState({
     name: "",
     subdomain: "",
@@ -116,7 +126,7 @@ export default function MayaAdminGodDashboard() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== "image/png") {
-      alert("Por favor selecciona únicamente un archivo en formato .PNG");
+      mostrarToast("Selecciona únicamente un archivo en formato .PNG", "error");
       return;
     }
     const reader = new FileReader();
@@ -148,17 +158,17 @@ export default function MayaAdminGodDashboard() {
 
         const data = await res.json();
         if (!res.ok) {
-          alert("Error: " + data.error);
+          mostrarToast(data.error || "Error al actualizar empresa", "error");
           setGuardando(false);
           return;
         }
 
         setShowModalTenant(false);
+        mostrarToast("Corporativo y logo .PNG actualizados correctamente");
         cargarConsolaMaestra();
         return;
       }
 
-      // Crear nuevo corporativo
       const res = await fetch(`${API_URL}/api/master/tenants`, {
         method: "POST",
         headers: {
@@ -170,16 +180,17 @@ export default function MayaAdminGodDashboard() {
 
       const data = await res.json();
       if (!res.ok) {
-        alert("Error: " + data.error);
+        mostrarToast(data.error || "No se pudo crear el corporativo", "error");
         setGuardando(false);
         return;
       }
 
       setCredencialesCreadas(data.credencialesIniciales);
       setFormTenant({ name: "", subdomain: "", emailDomain: "", themeColor: "#e11d48", logoUrl: "" });
+      mostrarToast("Nuevo corporativo desplegado en la nube");
       cargarConsolaMaestra();
     } catch (error) {
-      alert("Error al guardar los datos del corporativo.");
+      mostrarToast("Error de red al guardar el corporativo", "error");
     } finally {
       setGuardando(false);
     }
@@ -187,17 +198,64 @@ export default function MayaAdminGodDashboard() {
 
   const alternarEstadoEmpresa = async (id) => {
     const token = localStorage.getItem("rmrg_master_token");
-    await fetch(`${API_URL}/api/master/tenants/${id}/toggle`, {
+    const res = await fetch(`${API_URL}/api/master/tenants/${id}/toggle`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}` }
     });
-    cargarConsolaMaestra();
+    if (res.ok) {
+      mostrarToast("Estado operativo del corporativo actualizado");
+      cargarConsolaMaestra();
+    }
+  };
+
+  const resetearSuperAdminEmpresa = async (t) => {
+    const token = localStorage.getItem("rmrg_master_token");
+    try {
+      const res = await fetch(`${API_URL}/api/master/tenants/${t.id}/reset-superadmin`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        mostrarToast(data.error || "No se pudo restablecer la cuenta", "error");
+        return;
+      }
+      setCredencialesReseteadas({ empresa: t.name, ...data.credenciales });
+      mostrarToast(`Clave de ${t.name} restablecida con éxito`);
+    } catch {
+      mostrarToast("Error al conectar con el servidor", "error");
+    }
   };
 
   if (!autorizado) return null;
 
+  const q = busquedaTenant.toLowerCase().trim();
+  const tenantsFiltrados = tenants.filter((t) => {
+    if (!q) return true;
+    return (
+      t.name?.toLowerCase().includes(q) ||
+      t.emailDomain?.toLowerCase().includes(q) ||
+      t.superAdmin?.email?.toLowerCase().includes(q) ||
+      t.superAdmin?.numeroEmpleado?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
+      {/* TOAST FLOTANTE */}
+      {toast && (
+        <div
+          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl shadow-2xl border flex items-center gap-2.5 text-xs font-bold ${
+            toast.tipo === "error"
+              ? "bg-red-950/95 border-red-500/50 text-red-200"
+              : "bg-emerald-950/95 border-emerald-500/50 text-emerald-200"
+          }`}
+        >
+          {toast.tipo === "error" ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+          <span>{toast.mensaje}</span>
+        </div>
+      )}
+
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30 px-6 py-4 flex flex-wrap justify-between items-center gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500">
@@ -271,10 +329,21 @@ export default function MayaAdminGodDashboard() {
 
         {/* TABLA DE CORPORATIVOS */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+          <div className="px-6 py-4 border-b border-slate-800 flex flex-wrap justify-between items-center gap-3">
             <div>
               <h2 className="text-base font-bold text-white">Ecosistema de Empresas (Multi-Tenant)</h2>
-              <p className="text-xs text-slate-400">Control de instancias, logos personalizados .PNG, dominios corporativos y estado de servicio</p>
+              <p className="text-xs text-slate-400">Control de instancias, logos personalizados .PNG, dominios corporativos y cuentas Super Admin</p>
+            </div>
+
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar corporativo, dominio o ID..."
+                value={busquedaTenant}
+                onChange={(e) => setBusquedaTenant(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-xs bg-slate-950 text-white border border-slate-700 rounded-lg focus:outline-none focus:border-red-500 w-64"
+              />
             </div>
           </div>
 
@@ -291,7 +360,7 @@ export default function MayaAdminGodDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
-                {tenants.map((t) => {
+                {tenantsFiltrados.map((t) => {
                   const slug = t.name.toLowerCase().replace(/[^a-z0-9]/g, "");
                   return (
                     <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
@@ -340,14 +409,23 @@ export default function MayaAdminGodDashboard() {
                       <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap">
                         <button
                           onClick={() => abrirModalEditarCorporativo(t)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors"
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors"
                           title="Subir o cambiar el logo .PNG y color de esta empresa"
                         >
                           <Edit3 size={13} /> Logo / Editar
                         </button>
+                        {t.superAdmin && (
+                          <button
+                            onClick={() => resetearSuperAdminEmpresa(t)}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 transition-colors"
+                            title="Restablecer contraseña del Director General a Admin123!"
+                          >
+                            <KeyRound size={13} /> Reset Admin
+                          </button>
+                        )}
                         <button
                           onClick={() => alternarEstadoEmpresa(t.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border transition-colors ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border transition-colors ${
                             t.isActive
                               ? "border-red-500/30 text-red-400 hover:bg-red-500/10"
                               : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
@@ -406,6 +484,31 @@ export default function MayaAdminGodDashboard() {
           </div>
         </div>
       </main>
+
+      {/* MODAL DE CREDENCIALES RESTABLECIDAS DEL SUPER ADMIN */}
+      {credencialesReseteadas && (
+        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-md p-6 text-white space-y-4">
+            <h3 className="text-base font-bold flex items-center gap-2 text-amber-400">
+              <KeyRound size={18} /> Credenciales Restablecidas ({credencialesReseteadas.empresa})
+            </h3>
+            <p className="text-xs text-slate-300">
+              Se ha restaurado el acceso de la cuenta <strong>Super Administrador</strong>:
+            </p>
+            <div className="bg-slate-950 p-3.5 rounded-xl font-mono text-xs space-y-1.5 border border-slate-800">
+              <p>ID Empleado: <span className="text-emerald-400 font-bold">{credencialesReseteadas.numeroEmpleado}</span></p>
+              <p>Correo: <span className="text-emerald-400 font-bold">{credencialesReseteadas.email}</span></p>
+              <p>Contraseña Temporal: <span className="text-amber-400 font-bold">{credencialesReseteadas.passwordTemporal}</span></p>
+            </div>
+            <button
+              onClick={() => setCredencialesReseteadas(null)}
+              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold"
+            >
+              Cerrar ventana
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* MODAL PARA CREAR O EDITAR CORPORATIVO Y SUBIR SU LOGO .PNG */}
       {showModalTenant && (

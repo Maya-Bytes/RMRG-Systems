@@ -5,7 +5,7 @@ import Image from "next/image";
 import { 
   LayoutDashboard, Users, Laptop, CircleDollarSign, 
   Ticket, LogOut, Bell, Menu, Settings, ChevronDown, 
-  ShieldAlert, CheckCheck
+  ShieldAlert, CheckCheck, CheckCircle2, AlertCircle, KeyRound
 } from "lucide-react";
 
 import VistaAnalitica from "./components/VistaAnalitica";
@@ -16,17 +16,6 @@ import VistaTickets from "./components/VistaTickets";
 import VistaAuditoria from "./components/VistaAuditoria";
 import ModalesERP from "./components/ModalesERP";
 import ModalGafeteQR from "./components/ModalGafeteQR";
-
-const DOMINIOS_POR_SLUG = {
-  thecocacolacompany: "coca-cola.com",
-  cocacola: "coca-cola.com",
-  samsungelectronics: "samsung.com",
-  samsung: "samsung.com",
-  microsoftcorporation: "microsoft.com",
-  microsoft: "microsoft.com",
-  amazonwebservices: "amazon.com",
-  aws: "amazon.com"
-};
 
 export default function DashboardEmpresa() {
   const params = useParams();
@@ -39,6 +28,13 @@ export default function DashboardEmpresa() {
   const [showProfileMenu, setShowProfileMenu] = useState(false); 
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [moduloActivo, setModuloActivo] = useState("Resumen");
+
+  // Sistema de Notificaciones Flotantes (Toast)
+  const [toast, setToast] = useState(null);
+  const mostrarToast = (mensaje, tipo = "ok") => {
+    setToast({ mensaje, tipo });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const [tenantInfo, setTenantInfo] = useState({ name: "Corporativo", emailDomain: "", themeColor: "#2563eb", logoUrl: null });
   const [perfil, setPerfil] = useState({ userId: "", numeroEmpleado: "", email: "", nombre: "Cargando...", apellido: "", puesto: "...", iniciales: "-", avatarUrl: null, rolSistema: "" });
@@ -53,8 +49,9 @@ export default function DashboardEmpresa() {
   const [filtroAreaTicket, setFiltroAreaTicket] = useState("TODOS");
 
   const [empleadoGafete, setEmpleadoGafete] = useState(null);
+  const [credencialesResetRH, setCredencialesResetRH] = useState(null);
 
-  // Estados de Modales
+  // Estados Modal Empleado (RH)
   const [showModalEmpleado, setShowModalEmpleado] = useState(false);
   const [modoEdicionEmpleado, setModoEdicionEmpleado] = useState(false);
   const [empleadoEditandoId, setEmpleadoEditandoId] = useState(null);
@@ -66,18 +63,24 @@ export default function DashboardEmpresa() {
     nombres: '', apellidos: '', email: '', puesto: '', rol: 'Operativo', salarioBase: '15000', tipoContrato: 'Indefinido', isActive: true
   });
 
+  // Estados Modal Equipo (TI)
   const [showModalEquipo, setShowModalEquipo] = useState(false);
+  const [modoEdicionEquipo, setModoEdicionEquipo] = useState(false);
+  const [equipoEditandoId, setEquipoEditandoId] = useState(null);
   const [formEquipo, setFormEquipo] = useState({
     serialNumber: '', deviceType: 'Laptop', model: '', status: 'Disponible', assignedToId: ''
   });
 
+  // Estados Modal Nómina (Finanzas)
   const [showModalNomina, setShowModalNomina] = useState(false);
 
+  // Estados Modal Ticket (Helpdesk)
   const [showModalTicket, setShowModalTicket] = useState(false);
   const [formTicket, setFormTicket] = useState({
     title: '', description: '', targetArea: 'IT', attachmentUrl: ''
   });
 
+  // Estados Modal Mi Cuenta
   const [showModalPerfil, setShowModalPerfil] = useState(false);
   const [nuevaPassword, setNuevaPassword] = useState("");
   const [fotoPerfilFile, setFotoPerfilFile] = useState(null);
@@ -85,7 +88,7 @@ export default function DashboardEmpresa() {
 
   const [guardando, setGuardando] = useState(false);
 
-  const dominioCorporativo = tenantInfo.emailDomain || DOMINIOS_POR_SLUG[empresa] || `${empresa}.com`;
+  const dominioCorporativo = tenantInfo.emailDomain || `${empresa}.com`;
   const colorMarca = tenantInfo.themeColor || "#2563eb";
   const notificacionesNoLeidas = listaNotificaciones.filter(n => !n.isRead).length;
 
@@ -118,7 +121,10 @@ export default function DashboardEmpresa() {
         return;
       }
       const dataResumen = await resResumen.json();
-      if (dataResumen.tenant) setTenantInfo(dataResumen.tenant);
+      if (dataResumen.tenant) {
+          setTenantInfo(dataResumen.tenant);
+          document.title = `${dataResumen.tenant.name} | RMRG Systems ERP`;
+        }
       setPerfil(dataResumen.usuario); 
       setMetricas(dataResumen.metricas); 
       setListaEmpleados(dataResumen.empleados); 
@@ -174,14 +180,14 @@ export default function DashboardEmpresa() {
     try {
       const res = await fetch(`${API_URL}/api/perfil`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
       if (res.ok) {
-        alert("✅ Tu cuenta se actualizó correctamente.");
+        mostrarToast("Tu cuenta se actualizó correctamente");
         setNuevaPassword("");
         setFotoPerfilFile(null);
         setFotoPerfilPreview(null);
         setShowModalPerfil(false);
         cargarTodo();
       } else {
-        alert("No se pudo actualizar el perfil.");
+        mostrarToast("No se pudo actualizar el perfil", "error");
       }
     } finally {
       setGuardando(false);
@@ -215,7 +221,7 @@ export default function DashboardEmpresa() {
       isActive: emp.isActive
     });
     setFotoFile(null);
-    setFotoPreview(null);
+    setFotoPreview(emp.avatarUrl || null);
     setShowModalEmpleado(true);
   };
 
@@ -230,7 +236,10 @@ export default function DashboardEmpresa() {
   const handleImageChange = (e, fileSetter, previewSetter) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.type !== "image/png") { alert("Por favor, selecciona únicamente archivos en formato .PNG"); return; }
+      if (file.type !== "image/png") {
+        mostrarToast("Selecciona únicamente archivos en formato .PNG", "error");
+        return;
+      }
       fileSetter(file);
       previewSetter(URL.createObjectURL(file));
     }
@@ -239,39 +248,88 @@ export default function DashboardEmpresa() {
   const guardarEmpleado = async (e) => {
     e.preventDefault();
     const prefijoLimpio = emailPrefijo.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
-    if (!prefijoLimpio) { alert("Por favor ingresa un usuario válido para el correo corporativo."); return; }
+    if (!prefijoLimpio) {
+      mostrarToast("Ingresa un usuario válido para el correo corporativo", "error");
+      return;
+    }
 
     const correoCompleto = `${prefijoLimpio}@${dominioCorporativo}`;
     setGuardando(true);
     const token = localStorage.getItem('rmrg_token');
 
     try {
-      let res;
-      if (modoEdicionEmpleado) {
-        res = await fetch(`${API_URL}/api/hr/empleados/${empleadoEditandoId}`, {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...formEmpleado, email: correoCompleto })
-        });
-      } else {
-        const paqueteDatos = new FormData();
-        Object.entries({ ...formEmpleado, email: correoCompleto }).forEach(([k, v]) => paqueteDatos.append(k, v));
-        if (fotoFile) paqueteDatos.append('foto', fotoFile);
-        res = await fetch(`${API_URL}/api/dashboard/empleados`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: paqueteDatos });
-      }
+      const paqueteDatos = new FormData();
+      Object.entries({ ...formEmpleado, email: correoCompleto }).forEach(([k, v]) => paqueteDatos.append(k, v));
+      if (fotoFile) paqueteDatos.append('foto', fotoFile);
 
+      const url = modoEdicionEmpleado
+        ? `${API_URL}/api/hr/empleados/${empleadoEditandoId}`
+        : `${API_URL}/api/dashboard/empleados`;
+
+      const res = await fetch(url, {
+        method: modoEdicionEmpleado ? 'PUT' : 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: paqueteDatos
+      });
+
+      const data = await res.json();
       if (res.ok) {
         setShowModalEmpleado(false);
+        if (modoEdicionEmpleado) {
+          const msgExtra = data.equiposLiberados > 0 ? ` (${data.equiposLiberados} equipo(s) TI liberado(s))` : "";
+          mostrarToast(`Expediente laboral actualizado${msgExtra}`);
+        } else {
+          mostrarToast("Nuevo colaborador registrado con éxito");
+        }
         cargarTodo();
       } else {
-        const err = await res.json();
-        alert("Error: " + err.error);
+        mostrarToast(data.error || "Error al guardar expediente", "error");
       }
     } catch (error) {
-      alert("Error de conexión al guardar empleado.");
+      mostrarToast("Error de conexión al guardar empleado", "error");
     } finally {
       setGuardando(false);
     }
+  };
+
+  const resetearPasswordEmpleado = async (emp) => {
+    const token = localStorage.getItem('rmrg_token');
+    try {
+      const res = await fetch(`${API_URL}/api/hr/empleados/${emp.id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCredencialesResetRH(data);
+        mostrarToast(`Contraseña de ${emp.nombreCompleto} restablecida`);
+        cargarTodo();
+      } else {
+        mostrarToast(data.error || "No se pudo restablecer la contraseña", "error");
+      }
+    } catch {
+      mostrarToast("Error de red al restablecer contraseña", "error");
+    }
+  };
+
+  const abrirModalNuevoEquipo = () => {
+    setModoEdicionEquipo(false);
+    setEquipoEditandoId(null);
+    setFormEquipo({ serialNumber: '', deviceType: 'Laptop', model: '', status: 'Disponible', assignedToId: '' });
+    setShowModalEquipo(true);
+  };
+
+  const abrirModalEditarEquipo = (eq) => {
+    setModoEdicionEquipo(true);
+    setEquipoEditandoId(eq.id);
+    setFormEquipo({
+      serialNumber: eq.serialNumber || '',
+      deviceType: eq.deviceType || 'Laptop',
+      model: eq.model || '',
+      status: eq.status || 'Disponible',
+      assignedToId: eq.assignedToId || ''
+    });
+    setShowModalEquipo(true);
   };
 
   const guardarEquipo = async (e) => {
@@ -279,15 +337,24 @@ export default function DashboardEmpresa() {
     setGuardando(true);
     const token = localStorage.getItem('rmrg_token');
     try {
-      const res = await fetch(`${API_URL}/api/it/equipos`, {
-        method: 'POST',
+      const url = modoEdicionEquipo
+        ? `${API_URL}/api/it/equipos/${equipoEditandoId}`
+        : `${API_URL}/api/it/equipos`;
+
+      const res = await fetch(url, {
+        method: modoEdicionEquipo ? 'PUT' : 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(formEquipo)
       });
+
+      const data = await res.json();
       if (res.ok) {
         setShowModalEquipo(false);
         setFormEquipo({ serialNumber: '', deviceType: 'Laptop', model: '', status: 'Disponible', assignedToId: '' });
+        mostrarToast(modoEdicionEquipo ? "Activo TI actualizado correctamente" : "Nuevo equipo TI registrado");
         cargarTodo();
+      } else {
+        mostrarToast(data.error || "No se pudo guardar el equipo TI", "error");
       }
     } finally {
       setGuardando(false);
@@ -296,12 +363,18 @@ export default function DashboardEmpresa() {
 
   const actualizarEquipo = async (id, status, assignedToId) => {
     const token = localStorage.getItem('rmrg_token');
-    await fetch(`${API_URL}/api/it/equipos/${id}`, {
+    const res = await fetch(`${API_URL}/api/it/equipos/${id}`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, assignedToId })
     });
-    cargarTodo();
+    if (res.ok) {
+      mostrarToast("Resguardo de equipo TI actualizado");
+      cargarTodo();
+    } else {
+      const err = await res.json();
+      mostrarToast(err.error || "No tienes permisos para modificar inventario TI", "error");
+    }
   };
 
   const actualizarSalarioTabulador = async (userId, salarioBase) => {
@@ -313,7 +386,9 @@ export default function DashboardEmpresa() {
     });
     if (!res.ok) {
       const err = await res.json();
-      alert("Error: " + err.error);
+      mostrarToast(err.error || "Error al actualizar tabulador", "error");
+    } else {
+      mostrarToast("Salario base actualizado en el Tabulador");
     }
     cargarTodo();
   };
@@ -329,10 +404,11 @@ export default function DashboardEmpresa() {
       });
       if (res.ok) {
         setShowModalNomina(false);
+        mostrarToast(`Nómina dispersada a ${pagos.length} colaborador(es)`);
         cargarTodo();
       } else {
         const err = await res.json();
-        alert("Error: " + err.error);
+        mostrarToast(err.error || "Error al dispersar nómina", "error");
       }
     } finally {
       setGuardando(false);
@@ -352,6 +428,7 @@ export default function DashboardEmpresa() {
       if (res.ok) {
         setShowModalTicket(false);
         setFormTicket({ title: '', description: '', targetArea: 'IT', attachmentUrl: '' });
+        mostrarToast("Solicitud de soporte enviada al departamento");
         cargarTodo();
       }
     } finally {
@@ -359,16 +436,24 @@ export default function DashboardEmpresa() {
     }
   };
 
-  const cambiarEstadoTicket = async (id, nuevoStatus, motivoRechazo = "") => {
+  const cambiarEstadoTicket = async (id, nuevoStatus, motivoRechazo = "", notaResolucion = "") => {
     const token = localStorage.getItem('rmrg_token');
     const res = await fetch(`${API_URL}/api/tickets/${id}`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: nuevoStatus, motivoRechazo })
+      body: JSON.stringify({ status: nuevoStatus, motivoRechazo, notaResolucion })
     });
     if (!res.ok) {
       const err = await res.json();
-      alert("⚠️ " + err.error);
+      mostrarToast(err.error || "No se pudo actualizar el ticket", "error");
+    } else {
+      mostrarToast(
+        nuevoStatus === "RESOLVED"
+          ? "Ticket marcado como resuelto"
+          : nuevoStatus === "REJECTED"
+            ? "Ticket rechazado y notificado"
+            : "Ticket asignado y en progreso"
+      );
     }
     cargarTodo();
   };
@@ -411,7 +496,25 @@ export default function DashboardEmpresa() {
     <div className="flex h-screen bg-gray-50 text-slate-900 overflow-hidden font-sans relative">
       <div className="fixed top-0 left-0 right-0 h-1 z-50" style={{ backgroundColor: colorMarca }} />
 
-      {/* SIDEBAR CON SOPORTE DE LOGO BASE64 DESDE MODO DIOS */}
+      {/* NOTIFICACIÓN TOAST PROFESIONAL */}
+      {toast && (
+        <div
+          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl border flex items-center gap-2.5 text-xs font-bold transition-all ${
+            toast.tipo === "error"
+              ? "bg-red-50 border-red-200 text-red-800"
+              : "bg-slate-900 border-slate-800 text-white"
+          }`}
+        >
+          {toast.tipo === "error" ? (
+            <AlertCircle size={16} className="text-red-600 shrink-0" />
+          ) : (
+            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          )}
+          <span>{toast.mensaje}</span>
+        </div>
+      )}
+
+      {/* SIDEBAR CORPORATIVO */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white border-r border-gray-200 transition-all duration-300 flex flex-col z-20`}>
         <div className="h-16 flex items-center justify-center border-b border-gray-200 p-4">
           <div className="relative w-full h-10 flex items-center justify-center">
@@ -653,7 +756,7 @@ export default function DashboardEmpresa() {
             </div>
           )}
 
-          {/* TABLERO EJECUTIVO EN RESUMEN (Gráficas + Actividad reciente sin repetir las tablas) */}
+          {/* TABLERO EJECUTIVO EN RESUMEN */}
           {moduloActivo === "Resumen" && !esOperativo && (
             <VistaAnalitica
               perfil={perfil}
@@ -682,6 +785,7 @@ export default function DashboardEmpresa() {
               abrirModalNuevoEmpleado={abrirModalNuevoEmpleado}
               abrirModalEditarEmpleado={abrirModalEditarEmpleado}
               abrirModalGafete={(emp) => setEmpleadoGafete(emp)}
+              resetearPasswordEmpleado={resetearPasswordEmpleado}
               irANuevoTicket={() => { setModuloActivo("Helpdesk Tickets"); setShowModalTicket(true); }}
             />
           )}
@@ -695,7 +799,9 @@ export default function DashboardEmpresa() {
               listaEquipos={listaEquipos}
               listaEmpleados={listaEmpleados}
               actualizarEquipo={actualizarEquipo}
-              abrirModalEquipo={() => setShowModalEquipo(true)}
+              abrirModalNuevoEquipo={abrirModalNuevoEquipo}
+              abrirModalEditarEquipo={abrirModalEditarEquipo}
+              mostrarToast={mostrarToast}
             />
           )}
 
@@ -731,6 +837,34 @@ export default function DashboardEmpresa() {
         </main>
       </div>
 
+      {/* MODAL DE CONFIRMACIÓN DE RESETEO DE CONTRASEÑA EN RH */}
+      {credencialesResetRH && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border border-slate-200 space-y-4">
+            <div className="flex items-center gap-2.5 text-amber-600">
+              <KeyRound size={20} />
+              <h3 className="text-base font-bold text-slate-900">Contraseña Restablecida (RH)</h3>
+            </div>
+            <p className="text-xs text-slate-600">
+              Comparte estas credenciales temporales con el colaborador para que pueda ingresar y cambiar su clave desde <strong>Configuración de Cuenta</strong>:
+            </p>
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 font-mono text-xs space-y-1.5 text-slate-800">
+              <p>Colaborador: <span className="font-bold">{credencialesResetRH.nombreCompleto}</span></p>
+              <p>ID Empleado: <span className="font-bold text-blue-700">{credencialesResetRH.numeroEmpleado}</span></p>
+              <p>Correo: <span className="font-bold">{credencialesResetRH.email}</span></p>
+              <p>Clave Temporal: <span className="font-extrabold text-emerald-700">{credencialesResetRH.passwordTemporal}</span></p>
+            </div>
+            <button
+              onClick={() => setCredencialesResetRH(null)}
+              style={{ backgroundColor: colorMarca }}
+              className="w-full py-2.5 rounded-xl text-white text-xs font-bold shadow-sm"
+            >
+              Entendido, cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* MODAL DE GAFETE CORPORATIVO CON QR */}
       <ModalGafeteQR
         empleado={empleadoGafete}
@@ -748,6 +882,7 @@ export default function DashboardEmpresa() {
         dominioCorporativo={dominioCorporativo}
         guardando={guardando}
         listaEmpleados={listaEmpleados}
+        mostrarToast={mostrarToast}
         showModalPerfil={showModalPerfil}
         setShowModalPerfil={setShowModalPerfil}
         guardarMiPerfil={guardarMiPerfil}
@@ -774,6 +909,7 @@ export default function DashboardEmpresa() {
         handleImageChange={handleImageChange}
         showModalEquipo={showModalEquipo}
         setShowModalEquipo={setShowModalEquipo}
+        modoEdicionEquipo={modoEdicionEquipo}
         formEquipo={formEquipo}
         setFormEquipo={setFormEquipo}
         guardarEquipo={guardarEquipo}

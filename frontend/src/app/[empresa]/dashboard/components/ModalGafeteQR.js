@@ -50,19 +50,19 @@ export default function ModalGafeteQR({
 
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(tenantInfo.name.toUpperCase(), 42.5, 12, { align: "center" });
+    doc.setFontSize(10.5);
+    doc.text(tenantInfo.name.toUpperCase(), 42.5, 11.5, { align: "center" });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
-    doc.text(`GAFETE DE IDENTIFICACIÓN OFICIAL`, 42.5, 18, { align: "center" });
+    doc.text(`GAFETE DE IDENTIFICACIÓN OFICIAL`, 42.5, 17, { align: "center" });
 
-    // Círculo blanco para foto o iniciales
+    // Marco cuadrado con esquinas redondeadas (enmarca perfectamente imágenes .PNG cuadradas)
     doc.setFillColor(255, 255, 255);
-    doc.circle(42.5, 34, 13, "F");
+    doc.roundedRect(29.5, 21, 26, 26, 3.5, 3.5, "F");
 
     if (avatarSrc && avatarSrc.startsWith("data:image/png")) {
       try {
-        doc.addImage(avatarSrc, "PNG", 31.5, 23, 22, 22);
+        doc.addImage(avatarSrc, "PNG", 31, 22.5, 23, 23);
       } catch {
         doc.setTextColor(...rgb);
         doc.setFontSize(14);
