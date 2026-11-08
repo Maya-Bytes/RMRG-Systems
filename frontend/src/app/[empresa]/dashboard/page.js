@@ -121,7 +121,10 @@ export default function DashboardEmpresa() {
         return;
       }
       const dataResumen = await resResumen.json();
-      if (dataResumen.tenant) setTenantInfo(dataResumen.tenant);
+      if (dataResumen.tenant) {
+          setTenantInfo(dataResumen.tenant);
+          document.title = `${dataResumen.tenant.name} | RMRG Systems ERP`;
+        }
       setPerfil(dataResumen.usuario); 
       setMetricas(dataResumen.metricas); 
       setListaEmpleados(dataResumen.empleados); 
