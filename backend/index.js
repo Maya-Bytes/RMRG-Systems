@@ -209,7 +209,7 @@ app.get('/api/dashboard/resumen', verificarToken, async (req, res) => {
   }
 });
 
-// Alta de Empleado
+// Alta de Empleado (Respeta el rango consecutivo del Tenant actual)
 app.post(
   '/api/dashboard/empleados',
   verificarToken,
@@ -227,7 +227,11 @@ app.post(
         ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
         : null;
 
-      const ultimoUsuario = await prisma.user.findFirst({ orderBy: { numeroEmpleado: 'desc' } });
+      // Busca el último ID únicamente dentro de esta empresa
+      const ultimoUsuario = await prisma.user.findFirst({
+        where: { tenantId: req.user.tenantId },
+        orderBy: { numeroEmpleado: 'desc' }
+      });
       const nuevoNumeroEmpleado = ultimoUsuario
         ? String(parseInt(ultimoUsuario.numeroEmpleado, 10) + 1)
         : String(Math.floor(100000 + Math.random() * 900000));
@@ -978,6 +982,7 @@ app.get('/api/master/overview', verificarMasterToken, async (req, res) => {
   }
 });
 
+// Desplegar Nuevo Corporativo (Salta automáticamente al siguiente bloque de 100,000: 500001, 600001...)
 app.post('/api/master/tenants', verificarMasterToken, async (req, res) => {
   const { name, subdomain, emailDomain, themeColor, logoUrl } = req.body;
 
@@ -996,10 +1001,14 @@ app.post('/api/master/tenants', verificarMasterToken, async (req, res) => {
 
     const defaultPassword = await bcrypt.hash('Admin123!', 10);
 
-    const ultimoUsuario = await prisma.user.findFirst({ orderBy: { numeroEmpleado: 'desc' } });
-    const nuevoNumeroEmpleado = ultimoUsuario
-      ? String(parseInt(ultimoUsuario.numeroEmpleado, 10) + 1)
-      : '100001';
+    // Calcula el siguiente bloque de 100,000 para aislar los IDs de la nueva empresa
+    const ultimoUsuario = await prisma.user.findFirst({
+      orderBy: { numeroEmpleado: 'desc' }
+    });
+    const bloqueActual = ultimoUsuario
+      ? Math.floor(parseInt(ultimoUsuario.numeroEmpleado, 10) / 100000)
+      : 0;
+    const nuevoNumeroEmpleado = String((bloqueActual + 1) * 100000 + 1);
 
     const nuevoTenant = await prisma.tenant.create({
       data: {
