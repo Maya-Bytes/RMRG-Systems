@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Laptop, CircleDollarSign, FileText, Download, FileSpreadsheet,
-  Plus, Edit3, QrCode, Search, KeyRound
+  Plus, Edit3, QrCode, Search
 } from "lucide-react";
 import {
   exportarEmpleadosExcel,
@@ -18,20 +18,19 @@ export default function VistaRH({
   dominioCorporativo,
   empresa,
   metricas,
-  listaEmpleados,
-  misEquipos,
-  misNominas,
+  listaEmpleados = [],
+  listaEquipos = [],
+  misEquipos = [],
+  misNominas = [],
   resolverAvatar,
   abrirModalNuevoEmpleado,
   abrirModalEditarEmpleado,
   abrirModalGafete,
-  resetearPasswordEmpleado,
   irANuevoTicket
 }) {
   const [busqueda, setBusqueda] = useState("");
 
   const mostrarSalariosEnRH = perfil.rolSistema === "Super Administrador";
-  const puedeResetearClave = ["Super Administrador", "Admin de Recursos Humanos"].includes(perfil.rolSistema);
 
   const ctxReporte = {
     listaEmpleados,
@@ -133,7 +132,7 @@ export default function VistaRH({
       <div className="px-6 py-5 border-b border-gray-200 flex flex-wrap gap-3 justify-between items-center bg-gray-50/50">
         <div>
           <h3 className="text-lg font-semibold text-gray-800">Directorio, Gafetes QR y Expedientes de RH</h3>
-          <p className="text-xs text-gray-500">Gestión de puestos, modalidad de contratos, credenciales digitales con QR y Constancias en PDF</p>
+          <p className="text-xs text-gray-500">Gestión de puestos, contratos, consulta de activos asignados, credenciales QR y Constancias PDF</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -179,6 +178,7 @@ export default function VistaRH({
               <th className="px-6 py-4 font-semibold">ID / Empleado</th>
               <th className="px-6 py-4 font-semibold">Rol en Sistema</th>
               <th className="px-6 py-4 font-semibold">Puesto / Contrato</th>
+              <th className="px-6 py-4 font-semibold">Equipos TI Asignados</th>
               {mostrarSalariosEnRH && <th className="px-6 py-4 font-semibold">Salario Base</th>}
               <th className="px-6 py-4 font-semibold">Fecha Ingreso</th>
               <th className="px-6 py-4 font-semibold">Estado</th>
@@ -188,13 +188,15 @@ export default function VistaRH({
           <tbody className="divide-y divide-gray-200">
             {empleadosFiltrados.length === 0 ? (
               <tr>
-                <td colSpan={mostrarSalariosEnRH ? 7 : 6} className="px-6 py-8 text-center text-xs text-slate-400">
+                <td colSpan={mostrarSalariosEnRH ? 8 : 7} className="px-6 py-8 text-center text-xs text-slate-400">
                   No se encontraron colaboradores que coincidan con "{busqueda}".
                 </td>
               </tr>
             ) : (
               empleadosFiltrados.map((empleado) => {
                 const avatarSrc = resolverAvatar(empleado.avatarUrl);
+                const equiposEmpleado = listaEquipos.filter(eq => eq.assignedToId === empleado.id);
+
                 return (
                   <tr key={empleado.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
@@ -219,6 +221,24 @@ export default function VistaRH({
                     <td className="px-6 py-4">
                       <p className="text-sm font-medium text-gray-800">{empleado.puesto}</p>
                       <p className="text-xs text-gray-500">{empleado.tipoContrato}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      {equiposEmpleado.length === 0 ? (
+                        <span className="text-xs text-slate-400">Sin equipo asignado</span>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          {equiposEmpleado.map(eq => (
+                            <span
+                              key={eq.id}
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[11px] text-slate-700 w-fit"
+                            >
+                              <Laptop size={12} className="text-slate-500 shrink-0" />
+                              <span className="font-semibold">{eq.deviceType} {eq.model}</span>
+                              <span className="font-mono text-[10px] text-slate-500">({eq.serialNumber})</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     {mostrarSalariosEnRH && (
                       <td className="px-6 py-4 text-sm font-semibold text-gray-800">
@@ -252,15 +272,6 @@ export default function VistaRH({
                           className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 inline-flex items-center gap-1 transition-colors"
                         >
                           <Edit3 size={14} /> Editar
-                        </button>
-                      )}
-                      {puedeResetearClave && resetearPasswordEmpleado && (
-                        <button
-                          onClick={() => resetearPasswordEmpleado(empleado)}
-                          title="Restablecer contraseña temporal (Admin123!)"
-                          className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1 transition-colors"
-                        >
-                          <KeyRound size={13} /> Reset Clave
                         </button>
                       )}
                     </td>
