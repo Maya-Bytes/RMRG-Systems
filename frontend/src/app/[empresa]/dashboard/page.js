@@ -49,7 +49,7 @@ export default function DashboardEmpresa() {
   const [filtroAreaTicket, setFiltroAreaTicket] = useState("TODOS");
 
   const [empleadoGafete, setEmpleadoGafete] = useState(null);
-  const [credencialesResetRH, setCredencialesResetRH] = useState(null);
+  const [credencialesResetTI, setCredencialesResetTI] = useState(null);
 
   // Estados Modal Empleado (RH)
   const [showModalEmpleado, setShowModalEmpleado] = useState(false);
@@ -122,9 +122,9 @@ export default function DashboardEmpresa() {
       }
       const dataResumen = await resResumen.json();
       if (dataResumen.tenant) {
-          setTenantInfo(dataResumen.tenant);
-          document.title = `${dataResumen.tenant.name} | RMRG Systems ERP`;
-        }
+        setTenantInfo(dataResumen.tenant);
+        document.title = `${dataResumen.tenant.name} | RMRG Systems ERP`;
+      }
       setPerfil(dataResumen.usuario); 
       setMetricas(dataResumen.metricas); 
       setListaEmpleados(dataResumen.empleados); 
@@ -292,17 +292,18 @@ export default function DashboardEmpresa() {
     }
   };
 
+  // Restablecimiento de contraseña ahora gestionado desde el módulo de TI
   const resetearPasswordEmpleado = async (emp) => {
     const token = localStorage.getItem('rmrg_token');
     try {
-      const res = await fetch(`${API_URL}/api/hr/empleados/${emp.id}/reset-password`, {
+      const res = await fetch(`${API_URL}/api/it/usuarios/${emp.id}/reset-password`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       if (res.ok) {
-        setCredencialesResetRH(data);
-        mostrarToast(`Contraseña de ${emp.nombreCompleto} restablecida`);
+        setCredencialesResetTI(data);
+        mostrarToast(`Contraseña de ${emp.nombreCompleto} restablecida por TI`);
         cargarTodo();
       } else {
         mostrarToast(data.error || "No se pudo restablecer la contraseña", "error");
@@ -769,7 +770,7 @@ export default function DashboardEmpresa() {
             />
           )}
 
-          {/* VISTAS DE TABLAS OPERATIVAS EXCLUSIVAS EN SU PESTAÑA */}
+          {/* RECURSOS HUMANOS (Ahora visualiza equipos asignados en solo lectura, sin Reset Clave) */}
           {(moduloActivo === "Recursos Humanos" || (moduloActivo === "Resumen" && esOperativo)) && (
             <VistaRH
               perfil={perfil}
@@ -779,17 +780,18 @@ export default function DashboardEmpresa() {
               empresa={empresa}
               metricas={metricas}
               listaEmpleados={listaEmpleados}
+              listaEquipos={listaEquipos}
               misEquipos={misEquipos}
               misNominas={misNominas}
               resolverAvatar={resolverAvatar}
               abrirModalNuevoEmpleado={abrirModalNuevoEmpleado}
               abrirModalEditarEmpleado={abrirModalEditarEmpleado}
               abrirModalGafete={(emp) => setEmpleadoGafete(emp)}
-              resetearPasswordEmpleado={resetearPasswordEmpleado}
               irANuevoTicket={() => { setModuloActivo("Helpdesk Tickets"); setShowModalTicket(true); }}
             />
           )}
 
+          {/* EQUIPOS TI (Ahora incluye pestaña de Cuentas y Reset Clave) */}
           {moduloActivo === "Equipos TI" && (
             <VistaTI
               perfil={perfil}
@@ -801,6 +803,7 @@ export default function DashboardEmpresa() {
               actualizarEquipo={actualizarEquipo}
               abrirModalNuevoEquipo={abrirModalNuevoEquipo}
               abrirModalEditarEquipo={abrirModalEditarEquipo}
+              resetearPasswordEmpleado={resetearPasswordEmpleado}
               mostrarToast={mostrarToast}
             />
           )}
@@ -837,25 +840,25 @@ export default function DashboardEmpresa() {
         </main>
       </div>
 
-      {/* MODAL DE CONFIRMACIÓN DE RESETEO DE CONTRASEÑA EN RH */}
-      {credencialesResetRH && (
+      {/* MODAL DE CONFIRMACIÓN DE RESETEO DE CONTRASEÑA EN TI */}
+      {credencialesResetTI && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border border-slate-200 space-y-4">
             <div className="flex items-center gap-2.5 text-amber-600">
               <KeyRound size={20} />
-              <h3 className="text-base font-bold text-slate-900">Contraseña Restablecida (RH)</h3>
+              <h3 className="text-base font-bold text-slate-900">Contraseña Restablecida (Sistemas / TI)</h3>
             </div>
             <p className="text-xs text-slate-600">
-              Comparte estas credenciales temporales con el colaborador para que pueda ingresar y cambiar su clave desde <strong>Configuración de Cuenta</strong>:
+              Comparte estas credenciales temporales con el usuario para que pueda acceder y cambiar su clave desde <strong>Configuración de Cuenta</strong>:
             </p>
             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 font-mono text-xs space-y-1.5 text-slate-800">
-              <p>Colaborador: <span className="font-bold">{credencialesResetRH.nombreCompleto}</span></p>
-              <p>ID Empleado: <span className="font-bold text-blue-700">{credencialesResetRH.numeroEmpleado}</span></p>
-              <p>Correo: <span className="font-bold">{credencialesResetRH.email}</span></p>
-              <p>Clave Temporal: <span className="font-extrabold text-emerald-700">{credencialesResetRH.passwordTemporal}</span></p>
+              <p>Usuario: <span className="font-bold">{credencialesResetTI.nombreCompleto}</span></p>
+              <p>ID Empleado: <span className="font-bold text-blue-700">{credencialesResetTI.numeroEmpleado}</span></p>
+              <p>Correo: <span className="font-bold">{credencialesResetTI.email}</span></p>
+              <p>Clave Temporal: <span className="font-extrabold text-emerald-700">{credencialesResetTI.passwordTemporal}</span></p>
             </div>
             <button
-              onClick={() => setCredencialesResetRH(null)}
+              onClick={() => setCredencialesResetTI(null)}
               style={{ backgroundColor: colorMarca }}
               className="w-full py-2.5 rounded-xl text-white text-xs font-bold shadow-sm"
             >

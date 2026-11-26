@@ -364,18 +364,21 @@ app.put(
   }
 );
 
-// Restablecer contraseña de un colaborador desde RH / Super Admin
+// Restablecer contraseña de un colaborador desde Sistemas / TI o Super Admin
 app.post(
-  '/api/hr/empleados/:id/reset-password',
+  '/api/it/usuarios/:id/reset-password',
   verificarToken,
-  requiereRol(['Super Administrador', 'Admin de Recursos Humanos']),
+  requiereRol(['Super Administrador', 'Admin de IT', 'Soporte IT']),
   async (req, res) => {
     const { id } = req.params;
     try {
       const emp = await prisma.user.findFirst({
         where: { id, tenantId: req.user.tenantId }
       });
-      if (!emp) return res.status(404).json({ error: "Colaborador no encontrado." });
+      if (!emp) return res.status(404).json({ error: "Usuario no encontrado." });
+      if (!emp.isActive) {
+        return res.status(400).json({ error: "No se puede restablecer la contraseña de una cuenta dada de baja." });
+      }
 
       const passwordTemporal = "Admin123!";
       const passwordHash = await bcrypt.hash(passwordTemporal, 10);
@@ -394,7 +397,7 @@ app.post(
       });
 
       await registrarAuditoria(
-        `RESET_PASSWORD_EMPLEADO (${emp.numeroEmpleado})`,
+        `RESET_PASSWORD_TI (${emp.numeroEmpleado})`,
         'User',
         emp.numeroEmpleado,
         req.user.userId,
@@ -410,7 +413,7 @@ app.post(
       });
     } catch (error) {
       console.error("Error al resetear password:", error);
-      res.status(500).json({ error: "No se pudo restablecer la contraseña del colaborador." });
+      res.status(500).json({ error: "No se pudo restablecer la contraseña del usuario." });
     }
   }
 );
